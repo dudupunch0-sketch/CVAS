@@ -5,7 +5,7 @@ ISP 알고리즘 C-model에서 `CVAS_START` / `CVAS_END` 구간만 분석하여 
 ## 주요 특징
 - **파싱 범위 제한**: `CVAS_START` ~ `CVAS_END` 구간만 처리 (그 외는 무시).
 - **Block 중심 모델링**: 함수 = Block, 함수 인자/반환값 = Signal.
-- **연산 카운트 및 cycle 추정**: add/sub, compare, multiply 기준.
+- **연산 카운트 및 cycle 추정**: 연산 노드(add/sub, compare, multiply) 기준.
 - **Cycle rule은 설정 가능**: JSON 설정 또는 CLI 인자.
 
 ## 사용 방법
@@ -53,18 +53,54 @@ python src/cvas_mvp.py path/to/model.c --cycle-config cycle.json
         "multiply": 2
       },
       "estimated_cycles": 6,
-      "note": "contains loop",
+      "note": "contains loop; internal op nodes emitted",
       "position": {
         "x": "TBD by drawing tool",
         "y": "TBD by drawing tool"
       }
     }
   ],
+  "operations": [
+    {
+      "op_id": "B1_op_1",
+      "op_type": "add",
+      "inputs": ["raw_pixel", "gain"],
+      "outputs": ["tmp_2"],
+      "parent_block_id": "B1"
+    },
+    {
+      "op_id": "B1_op_2",
+      "op_type": "compare",
+      "inputs": ["tmp_2", "threshold"],
+      "outputs": ["return"],
+      "parent_block_id": "B1"
+    }
+  ],
   "signals": [
     {
-      "source_block_id": "B1",
-      "destination_block_id": "B2",
+      "source_id": "B1",
+      "source_type": "block",
+      "destination_id": "B2",
+      "destination_type": "block",
       "signal_name": "rgb_pixel",
+      "direction": "out",
+      "comment": "return flow"
+    },
+    {
+      "source_id": "B1_op_1",
+      "source_type": "operation",
+      "destination_id": "B1_op_2",
+      "destination_type": "operation",
+      "signal_name": "tmp_2",
+      "direction": "internal",
+      "comment": "operand flow"
+    },
+    {
+      "source_id": "B1_op_2",
+      "source_type": "operation",
+      "destination_id": "B1",
+      "destination_type": "block",
+      "signal_name": "return",
       "direction": "out",
       "comment": "return flow"
     }
@@ -75,7 +111,8 @@ python src/cvas_mvp.py path/to/model.c --cycle-config cycle.json
   },
   "diagram_hint": {
     "layout": "TBD by drawing tool"
-  }
+  },
+  "note": "internal op nodes emitted"
 }
 ```
 
