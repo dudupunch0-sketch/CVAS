@@ -149,7 +149,7 @@ def parse_params(params: str) -> List[str]:
 
 
 def tokenize_expression(expr: str) -> List[str]:
-    token_pattern = re.compile(r"[A-Za-z_]\w*|\d+|<=|>=|==|!=|[+\-*<>]|\(|\)")
+    token_pattern = re.compile(r"[A-Za-z_]\w*|\d+|<=|>=|==|!=|[+\-*/<>]|\(|\)")
     return token_pattern.findall(expr)
 
 
@@ -164,24 +164,67 @@ def parse_expression_ops(
     ops: List[Operation] = []
     edges: List[Signal] = []
     op_index = op_index_start
-    operators = {"+", "-", "*", "<", ">", "<=", ">=", "==", "!="}
+    operators = {"+", "-", "*", "/", "<", ">", "<=", ">=", "==", "!="}
+    precedence = {
+        "*": 2,
+        "/": 2,
+        "+": 1,
+        "-": 1,
+        "<": 0,
+        ">": 0,
+        "<=": 0,
+        ">=": 0,
+        "==": 0,
+        "!=": 0,
+    }
 
     def is_operand(token: str) -> bool:
         return bool(re.match(r"[A-Za-z_]\w*|\d+|tmp_\d+", token))
 
-    while True:
-        op_pos = None
-        for idx, token in enumerate(tokens):
-            if token in operators:
-                if idx > 0 and idx + 1 < len(tokens) and is_operand(tokens[idx - 1]) and is_operand(tokens[idx + 1]):
-                    op_pos = idx
-                    break
-        if op_pos is None:
-            break
-        left = tokens[op_pos - 1]
-        op_token = tokens[op_pos]
-        right = tokens[op_pos + 1]
-        op_type = "compare" if op_token in {"<", ">", "<=", ">=", "==", "!="} else "multiply" if op_token == "*" else "add"
+    output_queue: List[str] = []
+    operator_stack: List[str] = []
+    for token in tokens:
+        if is_operand(token):
+            output_queue.append(token)
+        elif token in operators:
+            while (
+                operator_stack
+                and operator_stack[-1] in operators
+                and precedence[operator_stack[-1]] >= precedence[token]
+            ):
+                output_queue.append(operator_stack.pop())
+            operator_stack.append(token)
+        elif token == "(":
+            operator_stack.append(token)
+        elif token == ")":
+            while operator_stack and operator_stack[-1] != "(":
+                output_queue.append(operator_stack.pop())
+            if operator_stack and operator_stack[-1] == "(":
+                operator_stack.pop()
+
+    while operator_stack:
+        op_token = operator_stack.pop()
+        if op_token != "(":
+            output_queue.append(op_token)
+
+    eval_stack: List[str] = []
+    for token in output_queue:
+        if is_operand(token):
+            eval_stack.append(token)
+            continue
+
+        if token not in operators or len(eval_stack) < 2:
+            continue
+
+        right = eval_stack.pop()
+        left = eval_stack.pop()
+        op_type = (
+            "compare"
+            if token in {"<", ">", "<=", ">=", "==", "!="}
+            else "multiply"
+            if token in {"*", "/"}
+            else "add"
+        )
         op_id = f"{block_id}_op_{op_index}"
         op_index += 1
         output_name = f"tmp_{op_index}"
@@ -211,9 +254,9 @@ def parse_expression_ops(
                 )
 
         var_producers[output_name] = ("operation", op_id)
-        tokens = tokens[: op_pos - 1] + [output_name] + tokens[op_pos + 2 :]
+        eval_stack.append(output_name)
 
-    last_output = tokens[0] if tokens else None
+    last_output = eval_stack[-1] if eval_stack else None
     if output_target and ops:
         ops[-1].outputs = [output_target]
         var_producers[output_target] = ("operation", ops[-1].op_id)
