@@ -64,6 +64,24 @@ ISP 알고리즘 C-model 분석을 위한 고급 파서로, `CVAS_START` / `CVAS
 python src/cvas_mvp.py model.c -o output.json
 ```
 
+### 오프라인 다이어그램 뷰어 (JSON → HTML)
+
+CVAS JSON을 단일 HTML로 시각화하려면 `json_to_html.py`를 사용합니다.
+
+```bash
+python json_to_html.py output.json output.html
+```
+
+> **주의:** `output.html`과 같은 폴더에 `./assets/elk.bundled.js`가 있어야 합니다.  
+> 사내망/오프라인 환경에서는 `viewer/assets/elk.bundled.js`를 실제 ELK.js 브라우저 번들로 교체한 뒤,
+> `output.html`과 동일 경로에 `assets/elk.bundled.js`가 있도록 배치하세요.
+
+CVAS 분석부터 HTML까지 한 번에 실행하려면:
+
+```bash
+python cvas_wrapper.py model.c output.html
+```
+
 ### Cycle Rule 설정
 
 **CLI 인자:**
