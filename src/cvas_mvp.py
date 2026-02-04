@@ -593,6 +593,19 @@ def extract_operations(
     statements = [stmt.strip() for stmt in cleaned.split(";") if stmt.strip()]
 
     for statement in statements:
+        # Normalize C-style declarations with assignment: "int y = x" -> "y = x"
+        declaration_match = re.match(
+            r"(?P<type>(?:unsigned|signed|short|long|int|float|double|char|bool|void|"
+            r"size_t|ssize_t|uint\d+_t|int\d+_t)(?:\s+|\s*\*\s*)+)"
+            r"(?P<lhs>\w+)\s*=\s*(?P<rhs>.+)",
+            statement
+        )
+        if declaration_match:
+            statement = (
+                f"{declaration_match.group('lhs')} = "
+                f"{declaration_match.group('rhs').strip()}"
+            )
+
         # Assignment: var = expr
         assignment_match = re.match(r"(?P<lhs>\w+)\s*=(?!=)\s*(?P<rhs>.+)", statement)
         if assignment_match:
