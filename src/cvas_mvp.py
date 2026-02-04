@@ -886,57 +886,117 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
     # Count nesting depth (simplified)
     max_depth = cleaned.count("{")
 
-    # Create simplified basic blocks
     blocks: List[BasicBlock] = []
-
-    # Entry block
-    entry = BasicBlock(
-        block_id=f"{function_name}_entry",
-        parent_function=function_name,
-        operations=[],
-        predecessors=[],
-        successors=[],
-        block_type="entry"
-    )
-    blocks.append(entry)
-
-    # Main body block
-    main_ops = [op.op_id for op in operations]
-    main_block = BasicBlock(
-        block_id=f"{function_name}_main",
-        parent_function=function_name,
-        operations=main_ops,
-        predecessors=[entry.block_id],
-        successors=[],
-        block_type="sequential" if not (has_if or has_loop) else "conditional_branch"
-    )
-    blocks.append(main_block)
-    entry.successors.append(main_block.block_id)
-
-    # Exit block
-    exit_block = BasicBlock(
-        block_id=f"{function_name}_exit",
-        parent_function=function_name,
-        operations=[],
-        predecessors=[main_block.block_id],
-        successors=[],
-        block_type="exit"
-    )
-    blocks.append(exit_block)
-    main_block.successors.append(exit_block.block_id)
-
-    # Detect loops (simplified)
     loops: List[LoopInfo] = []
-    if has_loop:
-        loop_info = LoopInfo(
-            loop_id=f"{function_name}_loop_1",
-            header_block=main_block.block_id,
-            body_blocks=[main_block.block_id],
-            exit_blocks=[exit_block.block_id],
-            nesting_level=1,
-            estimated_iterations="unknown"
+
+    block_index = 0
+    loop_index = 0
+    pending_ops = [op.op_id for op in operations]
+
+    def make_block(block_type: str, operations_list: Optional[List[str]] = None) -> BasicBlock:
+        nonlocal block_index
+        block_index += 1
+        block = BasicBlock(
+            block_id=f"{function_name}_b{block_index}",
+            parent_function=function_name,
+            operations=operations_list or [],
+            predecessors=[],
+            successors=[],
+            block_type=block_type
         )
-        loops.append(loop_info)
+        blocks.append(block)
+        return block
+
+    def connect(from_block: BasicBlock, to_block: BasicBlock) -> None:
+        if to_block.block_id not in from_block.successors:
+            from_block.successors.append(to_block.block_id)
+        if from_block.block_id not in to_block.predecessors:
+            to_block.predecessors.append(from_block.block_id)
+
+    def assign_pending_ops(target_block: BasicBlock) -> None:
+        nonlocal pending_ops
+        if pending_ops:
+            target_block.operations = pending_ops
+            pending_ops = []
+
+    entry = make_block("entry")
+    current = entry
+
+    control_pattern = re.compile(r"\b(if|else|for|while|do)\b")
+    matches = list(control_pattern.finditer(cleaned))
+
+    def has_else_between(start: int, end: int) -> bool:
+        return bool(re.search(r"\belse\b", cleaned[start:end]))
+
+    for idx, match in enumerate(matches):
+        keyword = match.group(1)
+        if keyword == "else":
+            continue
+
+        if pending_ops and current == entry:
+            seq_block = make_block("sequential")
+            assign_pending_ops(seq_block)
+            connect(current, seq_block)
+            current = seq_block
+
+        if keyword == "if":
+            next_start = matches[idx + 1].start() if idx + 1 < len(matches) else len(cleaned)
+            has_else_branch = has_else_between(match.end(), next_start)
+
+            cond_block = make_block("conditional_branch")
+            connect(current, cond_block)
+
+            then_block = make_block("sequential")
+            assign_pending_ops(then_block)
+            connect(cond_block, then_block)
+
+            if has_else_branch:
+                else_block = make_block("sequential")
+                connect(cond_block, else_block)
+            else:
+                else_block = None
+
+            merge_block = make_block("sequential")
+            connect(then_block, merge_block)
+            if else_block:
+                connect(else_block, merge_block)
+            else:
+                connect(cond_block, merge_block)
+
+            current = merge_block
+
+        elif keyword in {"for", "while", "do"}:
+            loop_index += 1
+            header_block = make_block("loop_header")
+            connect(current, header_block)
+
+            body_block = make_block("loop_body")
+            assign_pending_ops(body_block)
+            connect(header_block, body_block)
+
+            exit_block = make_block("sequential")
+            connect(header_block, exit_block)
+            connect(body_block, header_block)
+
+            loops.append(LoopInfo(
+                loop_id=f"{function_name}_loop_{loop_index}",
+                header_block=header_block.block_id,
+                body_blocks=[body_block.block_id],
+                exit_blocks=[exit_block.block_id],
+                nesting_level=1,
+                estimated_iterations="unknown"
+            ))
+
+            current = exit_block
+
+    if pending_ops:
+        tail_block = make_block("sequential")
+        assign_pending_ops(tail_block)
+        connect(current, tail_block)
+        current = tail_block
+
+    exit_block = make_block("exit")
+    connect(current, exit_block)
 
     return ControlFlowGraph(
         function_name=function_name,
@@ -945,7 +1005,7 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
         exit_blocks=[exit_block.block_id],
         loops=loops,
         has_branches=has_if,
-        max_nesting_depth=max(1, max_depth // 2)  # Rough estimate
+        max_nesting_depth=max(1, max_depth // 2)
     )
 
 
