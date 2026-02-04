@@ -468,23 +468,33 @@ def parse_params(params: str) -> List[str]:
 # Expression Parsing (Shunting-yard Algorithm) - Enhanced
 # ============================================================================
 
+OPERAND_PATTERN = (
+    r'(?:'
+    r'(?:\([A-Za-z_]\w*(?:\s*\*+)?\)\s*)*'  # Optional casts like (int) or (struct Foo*)
+    r'(?:[+\-!~*&]+)?'                      # Optional unary operators (no whitespace)
+    r'(?:[A-Za-z_]\w*|0x[0-9A-Fa-f]+|\d+)'  # Base identifier or numeric literal
+    r'(?:\s*(?:\[[^\]]+\]|\.\w+|->\w+))*'   # Indexing and member access
+    r')'
+)
+OPERAND_REGEX = re.compile(rf"^{OPERAND_PATTERN}$")
+
+
 def tokenize_expression(expr: str) -> List[str]:
     """Tokenize expression including bitwise and shift operators."""
     pattern = re.compile(
-        r'[A-Za-z_]\w*|'      # Identifiers
-        r'\d+|'                # Numbers
-        r'<<=|>>=|'            # Shift assignment (not used after normalization)
-        r'<<|>>|'              # Shift operators
-        r'<=|>=|==|!=|'        # Comparison operators
-        r'[+\-*/%<>&|^]|'      # Arithmetic and bitwise
-        r'\(|\)'               # Parentheses
+        rf'{OPERAND_PATTERN}|'  # Operands with indexing/member access/casts/unary ops
+        r'<<=|>>=|'             # Shift assignment (not used after normalization)
+        r'<<|>>|'               # Shift operators
+        r'<=|>=|==|!=|'         # Comparison operators
+        r'[+\-*/%<>&|^]|'       # Arithmetic and bitwise
+        r'\(|\)'                # Parentheses
     )
-    return pattern.findall(expr)
+    return [token.strip() for token in pattern.findall(expr) if token.strip()]
 
 
 def is_operand(token: str) -> bool:
     """Check if token is an operand."""
-    return bool(re.match(r"[A-Za-z_]\w*|\d+|tmp_\d+|cond_\d+", token))
+    return bool(OPERAND_REGEX.match(token) or re.match(r"tmp_\d+|cond_\d+", token))
 
 
 def classify_operator(op: str) -> str:
