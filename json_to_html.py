@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-REQUIRED_FIELDS = ["blocks", "operations", "signals", "flow", "cfg", "call_graph"]
+REQUIRED_FIELDS = ["blocks", "operations", "signals", "flow"]
 
 
 def load_json(path: Path) -> dict:
