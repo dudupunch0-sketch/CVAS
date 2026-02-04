@@ -293,6 +293,106 @@ def normalize_compound_operators(body: str) -> str:
     return cleaned
 
 
+def split_statements(body: str) -> List[str]:
+    """Split statements by semicolons, ignoring those within brackets."""
+    statements = []
+    current = []
+    paren_depth = 0
+    bracket_depth = 0
+    brace_depth = 0
+
+    for char in body:
+        if char == "(":
+            paren_depth += 1
+        elif char == ")":
+            paren_depth = max(paren_depth - 1, 0)
+        elif char == "[":
+            bracket_depth += 1
+        elif char == "]":
+            bracket_depth = max(bracket_depth - 1, 0)
+        elif char == "{":
+            brace_depth += 1
+        elif char == "}":
+            brace_depth = max(brace_depth - 1, 0)
+
+        if char == ";" and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0:
+            statement = "".join(current).strip()
+            if statement:
+                statements.append(statement)
+            current = []
+        else:
+            current.append(char)
+
+    statement = "".join(current).strip()
+    if statement:
+        statements.append(statement)
+    return statements
+
+
+def extract_parenthesized_content(text: str, open_index: int) -> Optional[str]:
+    """Extract content within matching parentheses starting at open_index."""
+    if open_index < 0 or open_index >= len(text) or text[open_index] != "(":
+        return None
+    depth = 0
+    for index in range(open_index, len(text)):
+        char = text[index]
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return text[open_index + 1:index]
+    return None
+
+
+def extract_keyword_condition(statement: str, keyword: str) -> Optional[str]:
+    """Extract condition expression from a keyword statement like if/while."""
+    match = re.search(rf"\\b{re.escape(keyword)}\\b", statement)
+    if not match:
+        return None
+    open_index = statement.find("(", match.end())
+    if open_index == -1:
+        return None
+    return extract_parenthesized_content(statement, open_index)
+
+
+def split_top_level_semicolons(text: str) -> List[str]:
+    """Split text by semicolons, ignoring nested parentheses."""
+    parts = []
+    current = []
+    depth = 0
+    for char in text:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth = max(depth - 1, 0)
+        if char == ";" and depth == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    parts.append("".join(current))
+    return parts
+
+
+def extract_for_condition(statement: str) -> Optional[str]:
+    """Extract the condition expression from a for loop statement."""
+    match = re.search(r"\\bfor\\b", statement)
+    if not match:
+        return None
+    open_index = statement.find("(", match.end())
+    if open_index == -1:
+        return None
+    contents = extract_parenthesized_content(statement, open_index)
+    if contents is None:
+        return None
+    parts = split_top_level_semicolons(contents)
+    if len(parts) < 2:
+        return None
+    condition = parts[1].strip()
+    return condition if condition else None
+
+
 # ============================================================================
 # Function Parsing
 # ============================================================================
@@ -590,7 +690,7 @@ def extract_operations(
     op_index = 1
     condition_counter = 1
 
-    statements = [stmt.strip() for stmt in cleaned.split(";") if stmt.strip()]
+    statements = split_statements(cleaned)
 
     for statement in statements:
         # Normalize C-style declarations with assignment: "int y = x" -> "y = x"
@@ -675,19 +775,29 @@ def extract_operations(
                     )
             continue
 
-        # Conditional expression
-        conditional_match = re.search(r"\b(if|while)\s*\((.+)\)", statement)
-        if conditional_match:
-            condition_expr = conditional_match.group(2)
+        # Conditional expression (for/if/while)
+        for_condition = extract_for_condition(statement)
+        if for_condition is not None:
             output_name = f"cond_{condition_counter}"
             condition_counter += 1
-
             ops, op_index, _, new_edges = parse_expression_ops(
-                condition_expr, block_id, op_index, var_producers, output_target=output_name
+                for_condition, block_id, op_index, var_producers, output_target=output_name
             )
             operations.extend(ops)
             edges.extend(new_edges)
             continue
+
+        for keyword in ("if", "while"):
+            condition_expr = extract_keyword_condition(statement, keyword)
+            if condition_expr is not None:
+                output_name = f"cond_{condition_counter}"
+                condition_counter += 1
+                ops, op_index, _, new_edges = parse_expression_ops(
+                    condition_expr, block_id, op_index, var_producers, output_target=output_name
+                )
+                operations.extend(ops)
+                edges.extend(new_edges)
+                break
 
     # Build summary
     summary = OpSummary()
