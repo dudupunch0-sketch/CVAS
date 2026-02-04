@@ -895,24 +895,26 @@ def build_call_graph(
     # Find entry functions (not called by anyone)
     entry_functions = [name for name, node in nodes.items() if not node.callers]
 
-    # Calculate call depth using BFS
+    # Calculate call depth and detect recursion using DFS with recursion stack
+    def walk_call_graph(func_name: str, depth: int, stack: List[str]) -> None:
+        if func_name in stack:
+            cycle_start = stack.index(func_name)
+            for cycle_node in stack[cycle_start:]:
+                nodes[cycle_node].is_recursive = True
+            nodes[func_name].is_recursive = True
+            return
+
+        if depth <= nodes[func_name].call_depth:
+            return
+
+        nodes[func_name].call_depth = depth
+        new_stack = stack + [func_name]
+        for callee in nodes[func_name].callees:
+            walk_call_graph(callee, depth + 1, new_stack)
+
     if entry_functions:
-        queue = deque([(name, 0) for name in entry_functions])
-        visited = set()
-
-        while queue:
-            func_name, depth = queue.popleft()
-
-            if func_name in visited:
-                # Recursion detected
-                nodes[func_name].is_recursive = True
-                continue
-
-            visited.add(func_name)
-            nodes[func_name].call_depth = max(nodes[func_name].call_depth, depth)
-
-            for callee in nodes[func_name].callees:
-                queue.append((callee, depth + 1))
+        for entry in entry_functions:
+            walk_call_graph(entry, 0, [])
 
     # Calculate total cycles (bottom-up)
     max_depth = max((node.call_depth for node in nodes.values()), default=0)
