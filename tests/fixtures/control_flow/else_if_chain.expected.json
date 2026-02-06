@@ -1,0 +1,353 @@
+{
+  "blocks_summary": [
+    {
+      "block_id": "B1",
+      "block_name": "classify",
+      "estimated_cycles": 2,
+      "ops_summary": {
+        "add": 0,
+        "bitwise": 0,
+        "compare": 3,
+        "const": 1,
+        "copy": 0,
+        "load": 0,
+        "logic": 0,
+        "multiply": 0,
+        "shift": 0,
+        "store": 0
+      }
+    }
+  ],
+  "call_graph": {
+    "analysis_confidence": "low",
+    "analysis_coverage": 0.0,
+    "analysis_limitations": [
+      "AST parse failed; regex fallback used"
+    ],
+    "call_chains": [
+      [
+        "classify"
+      ]
+    ],
+    "critical_path": [
+      "classify"
+    ],
+    "entry_functions": [
+      "classify"
+    ],
+    "has_recursion": false,
+    "max_depth": 0,
+    "nodes": {
+      "classify": {
+        "block_id": "B1",
+        "call_depth": 0,
+        "callees": [],
+        "callers": [],
+        "function_name": "classify",
+        "is_recursive": false,
+        "self_cycles": 2,
+        "total_cycles": 2
+      }
+    }
+  },
+  "cfg": [
+    {
+      "block_name": "classify",
+      "cfg": {
+        "analysis_confidence": "medium",
+        "analysis_coverage": 1.0,
+        "analysis_limitations": [
+          "else-if chains are flattened in CFG"
+        ],
+        "basic_blocks": [
+          {
+            "block_id": "classify_b1",
+            "block_type": "entry",
+            "operations": [],
+            "parent_function": "classify",
+            "predecessors": [],
+            "successors": [
+              "classify_b2"
+            ]
+          },
+          {
+            "block_id": "classify_b2",
+            "block_type": "sequential",
+            "operations": [
+              "B1_op_1",
+              "B1_op_2",
+              "B1_op_3",
+              "B1_op_4"
+            ],
+            "parent_function": "classify",
+            "predecessors": [
+              "classify_b1"
+            ],
+            "successors": [
+              "classify_b3"
+            ]
+          },
+          {
+            "block_id": "classify_b3",
+            "block_type": "conditional_branch",
+            "operations": [],
+            "parent_function": "classify",
+            "predecessors": [
+              "classify_b2"
+            ],
+            "successors": [
+              "classify_b4",
+              "classify_b5"
+            ]
+          },
+          {
+            "block_id": "classify_b4",
+            "block_type": "sequential",
+            "operations": [],
+            "parent_function": "classify",
+            "predecessors": [
+              "classify_b3"
+            ],
+            "successors": [
+              "classify_b6"
+            ]
+          },
+          {
+            "block_id": "classify_b5",
+            "block_type": "sequential",
+            "operations": [],
+            "parent_function": "classify",
+            "predecessors": [
+              "classify_b3"
+            ],
+            "successors": [
+              "classify_b6"
+            ]
+          },
+          {
+            "block_id": "classify_b6",
+            "block_type": "sequential",
+            "operations": [],
+            "parent_function": "classify",
+            "predecessors": [
+              "classify_b4",
+              "classify_b5"
+            ],
+            "successors": [
+              "classify_b7"
+            ]
+          },
+          {
+            "block_id": "classify_b7",
+            "block_type": "conditional_branch",
+            "operations": [],
+            "parent_function": "classify",
+            "predecessors": [
+              "classify_b6"
+            ],
+            "successors": [
+              "classify_b8",
+              "classify_b9"
+            ]
+          },
+          {
+            "block_id": "classify_b8",
+            "block_type": "sequential",
+            "operations": [],
+            "parent_function": "classify",
+            "predecessors": [
+              "classify_b7"
+            ],
+            "successors": [
+              "classify_b10"
+            ]
+          },
+          {
+            "block_id": "classify_b9",
+            "block_type": "sequential",
+            "operations": [],
+            "parent_function": "classify",
+            "predecessors": [
+              "classify_b7"
+            ],
+            "successors": [
+              "classify_b10"
+            ]
+          },
+          {
+            "block_id": "classify_b10",
+            "block_type": "sequential",
+            "operations": [],
+            "parent_function": "classify",
+            "predecessors": [
+              "classify_b8",
+              "classify_b9"
+            ],
+            "successors": [
+              "classify_b11"
+            ]
+          },
+          {
+            "block_id": "classify_b11",
+            "block_type": "conditional_branch",
+            "operations": [],
+            "parent_function": "classify",
+            "predecessors": [
+              "classify_b10"
+            ],
+            "successors": [
+              "classify_b12",
+              "classify_b13"
+            ]
+          },
+          {
+            "block_id": "classify_b12",
+            "block_type": "sequential",
+            "operations": [],
+            "parent_function": "classify",
+            "predecessors": [
+              "classify_b11"
+            ],
+            "successors": [
+              "classify_b14"
+            ]
+          },
+          {
+            "block_id": "classify_b13",
+            "block_type": "sequential",
+            "operations": [],
+            "parent_function": "classify",
+            "predecessors": [
+              "classify_b11"
+            ],
+            "successors": [
+              "classify_b14"
+            ]
+          },
+          {
+            "block_id": "classify_b14",
+            "block_type": "sequential",
+            "operations": [],
+            "parent_function": "classify",
+            "predecessors": [
+              "classify_b12",
+              "classify_b13"
+            ],
+            "successors": [
+              "classify_b15"
+            ]
+          },
+          {
+            "block_id": "classify_b15",
+            "block_type": "exit",
+            "operations": [],
+            "parent_function": "classify",
+            "predecessors": [
+              "classify_b14"
+            ],
+            "successors": []
+          }
+        ],
+        "entry_block": "classify_b1",
+        "exit_blocks": [
+          "classify_b15"
+        ],
+        "function_name": "classify",
+        "has_branches": true,
+        "loops": [],
+        "max_nesting_depth": 1
+      }
+    }
+  ],
+  "operations": [
+    {
+      "inputs": [
+        "value",
+        "0"
+      ],
+      "op_id": "B1_op_1",
+      "op_type": "compare",
+      "outputs": [
+        "cond_1"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "-1"
+      ],
+      "op_id": "B1_op_2",
+      "op_type": "const",
+      "outputs": [
+        "return"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "value",
+        "0"
+      ],
+      "op_id": "B1_op_3",
+      "op_type": "compare",
+      "outputs": [
+        "cond_2"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "value",
+        "10"
+      ],
+      "op_id": "B1_op_4",
+      "op_type": "compare",
+      "outputs": [
+        "cond_3"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    }
+  ],
+  "signals": [
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_1",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "value",
+      "source_id": "B1",
+      "source_type": "block"
+    },
+    {
+      "comment": "return flow",
+      "destination_id": "B1",
+      "destination_type": "block",
+      "direction": "out",
+      "signal_name": "return",
+      "source_id": "B1_op_2",
+      "source_type": "operation"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_3",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "value",
+      "source_id": "B1",
+      "source_type": "block"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_4",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "value",
+      "source_id": "B1",
+      "source_type": "block"
+    }
+  ]
+}

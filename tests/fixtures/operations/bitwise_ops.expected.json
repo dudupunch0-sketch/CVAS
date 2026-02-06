@@ -1,0 +1,279 @@
+{
+  "blocks_summary": [
+    {
+      "block_id": "B1",
+      "block_name": "bitwise_ops",
+      "estimated_cycles": 2,
+      "ops_summary": {
+        "add": 2,
+        "bitwise": 3,
+        "compare": 0,
+        "const": 0,
+        "copy": 0,
+        "load": 0,
+        "logic": 0,
+        "multiply": 0,
+        "shift": 0,
+        "store": 0
+      }
+    }
+  ],
+  "call_graph": {
+    "analysis_confidence": "low",
+    "analysis_coverage": 0.0,
+    "analysis_limitations": [
+      "AST parse failed; regex fallback used"
+    ],
+    "call_chains": [
+      [
+        "bitwise_ops"
+      ]
+    ],
+    "critical_path": [
+      "bitwise_ops"
+    ],
+    "entry_functions": [
+      "bitwise_ops"
+    ],
+    "has_recursion": false,
+    "max_depth": 0,
+    "nodes": {
+      "bitwise_ops": {
+        "block_id": "B1",
+        "call_depth": 0,
+        "callees": [],
+        "callers": [],
+        "function_name": "bitwise_ops",
+        "is_recursive": false,
+        "self_cycles": 2,
+        "total_cycles": 2
+      }
+    }
+  },
+  "cfg": [
+    {
+      "block_name": "bitwise_ops",
+      "cfg": {
+        "analysis_confidence": "high",
+        "analysis_coverage": 1.0,
+        "analysis_limitations": [],
+        "basic_blocks": [
+          {
+            "block_id": "bitwise_ops_b1",
+            "block_type": "entry",
+            "operations": [],
+            "parent_function": "bitwise_ops",
+            "predecessors": [],
+            "successors": [
+              "bitwise_ops_b2"
+            ]
+          },
+          {
+            "block_id": "bitwise_ops_b2",
+            "block_type": "sequential",
+            "operations": [
+              "B1_op_1",
+              "B1_op_2",
+              "B1_op_3",
+              "B1_op_4",
+              "B1_op_5"
+            ],
+            "parent_function": "bitwise_ops",
+            "predecessors": [
+              "bitwise_ops_b1"
+            ],
+            "successors": [
+              "bitwise_ops_b3"
+            ]
+          },
+          {
+            "block_id": "bitwise_ops_b3",
+            "block_type": "exit",
+            "operations": [],
+            "parent_function": "bitwise_ops",
+            "predecessors": [
+              "bitwise_ops_b2"
+            ],
+            "successors": []
+          }
+        ],
+        "entry_block": "bitwise_ops_b1",
+        "exit_blocks": [
+          "bitwise_ops_b3"
+        ],
+        "function_name": "bitwise_ops",
+        "has_branches": false,
+        "loops": [],
+        "max_nesting_depth": 0
+      }
+    }
+  ],
+  "operations": [
+    {
+      "inputs": [
+        "a",
+        "b"
+      ],
+      "op_id": "B1_op_1",
+      "op_type": "bitwise",
+      "outputs": [
+        "and_result"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "a",
+        "b"
+      ],
+      "op_id": "B1_op_2",
+      "op_type": "bitwise",
+      "outputs": [
+        "or_result"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "a",
+        "b"
+      ],
+      "op_id": "B1_op_3",
+      "op_type": "bitwise",
+      "outputs": [
+        "xor_result"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "and_result",
+        "or_result"
+      ],
+      "op_id": "B1_op_4",
+      "op_type": "add",
+      "outputs": [
+        "tmp_5"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "tmp_5",
+        "xor_result"
+      ],
+      "op_id": "B1_op_5",
+      "op_type": "add",
+      "outputs": [
+        "return"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    }
+  ],
+  "signals": [
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_1",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "a",
+      "source_id": "B1",
+      "source_type": "block"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_1",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "b",
+      "source_id": "B1",
+      "source_type": "block"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_2",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "a",
+      "source_id": "B1",
+      "source_type": "block"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_2",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "b",
+      "source_id": "B1",
+      "source_type": "block"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_3",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "a",
+      "source_id": "B1",
+      "source_type": "block"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_3",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "b",
+      "source_id": "B1",
+      "source_type": "block"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_4",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "and_result",
+      "source_id": "B1_op_1",
+      "source_type": "operation"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_4",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "or_result",
+      "source_id": "B1_op_2",
+      "source_type": "operation"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_5",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "tmp_5",
+      "source_id": "B1_op_4",
+      "source_type": "operation"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_5",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "xor_result",
+      "source_id": "B1_op_3",
+      "source_type": "operation"
+    },
+    {
+      "comment": "return flow",
+      "destination_id": "B1",
+      "destination_type": "block",
+      "direction": "out",
+      "signal_name": "return",
+      "source_id": "B1_op_5",
+      "source_type": "operation"
+    }
+  ]
+}
