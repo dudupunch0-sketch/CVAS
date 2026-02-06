@@ -47,13 +47,20 @@ def parse_translation_unit(source: str):
     pycparser_module = load_pycparser()
     if pycparser_module is None:
         return None
+    try:
+        from pycparser import c_generator
+    except Exception as exc:
+        raise ImportError(
+            "Failed to import pycparser.c_generator. "
+            "This can happen if a local file/folder shadows the 'pycparser' package."
+        ) from exc
     normalized = normalize_c_source(source)
     parser = pycparser_module.CParser()
     try:
         ast = parser.parse(normalized)
     except Exception:
         return None
-    generator = pycparser_module.c_generator.CGenerator()
+    generator = c_generator.CGenerator()
     return pycparser_module, ast, generator, normalized
 
 
@@ -73,6 +80,13 @@ def parse_statement(statement: str):
     pycparser_module = load_pycparser()
     if pycparser_module is None:
         return None
+    try:
+        from pycparser import c_generator
+    except Exception as exc:
+        raise ImportError(
+            "Failed to import pycparser.c_generator. "
+            "This can happen if a local file/folder shadows the 'pycparser' package."
+        ) from exc
     wrapped = _wrap_statement_for_parse(statement)
     source = f"void __cvas_stmt(void) {{\n{wrapped}\n}}"
     normalized = normalize_c_source(source)
@@ -87,5 +101,5 @@ def parse_statement(statement: str):
     body_items = func.body.block_items or []
     if not body_items:
         return None
-    generator = pycparser_module.c_generator.CGenerator()
+    generator = c_generator.CGenerator()
     return pycparser_module, body_items[0], generator
