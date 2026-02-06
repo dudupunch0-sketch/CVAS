@@ -167,6 +167,8 @@ class ControlFlowGraph:
     has_branches: bool
     max_nesting_depth: int
     analysis_confidence: str
+    analysis_coverage: float
+    analysis_confidence_score: float
     analysis_limitations: List[str]
 
 
@@ -196,6 +198,9 @@ class CallGraph:
     critical_path: List[str]      # Longest execution path
     max_depth: int
     has_recursion: bool
+    analysis_coverage: float
+    analysis_confidence: float
+    analysis_details: Dict[str, int]
 
 
 # ============================================================================
@@ -1124,6 +1129,7 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
         return idx if idx < len(cleaned) else None
 
     control_pattern = re.compile(r"\b(if|for|while|do)\b")
+    total_controls = len(control_pattern.findall(cleaned))
     controls: List[Dict[str, object]] = []
 
     for match in control_pattern.finditer(cleaned):
@@ -1336,6 +1342,14 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
     else:
         analysis_confidence = "low"
 
+    if total_controls:
+        analysis_coverage = len(controls) / total_controls
+    else:
+        analysis_coverage = 1.0
+
+    limitation_penalty = min(0.5, 0.1 * len(analysis_limitations))
+    confidence_score = max(0.0, min(1.0, analysis_coverage - limitation_penalty))
+
     return ControlFlowGraph(
         function_name=function_name,
         basic_blocks=blocks,
@@ -1345,6 +1359,8 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
         has_branches=has_if,
         max_nesting_depth=max_depth,
         analysis_confidence=analysis_confidence,
+        analysis_coverage=round(analysis_coverage, 2),
+        analysis_confidence_score=round(confidence_score, 2),
         analysis_limitations=sorted(set(analysis_limitations))
     )
 
@@ -1353,11 +1369,11 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
 # P2: Function Call Analysis
 # ============================================================================
 
-def find_function_calls(
+def _find_function_calls_with_metadata(
     body: str,
     known_functions: Iterable[str]
-) -> List[Tuple[str, List[str], Optional[str]]]:
-    """Find function calls within known functions."""
+) -> Tuple[List[Tuple[str, List[str], Optional[str]]], Dict[str, bool]]:
+    """Find function calls within known functions and report parser metadata."""
     def find_calls_regex() -> List[Tuple[str, List[str], Optional[str]]]:
         cleaned = strip_comments_and_strings(body)
         call_pattern = re.compile(
@@ -1382,9 +1398,11 @@ def find_function_calls(
     pycparser_module = _load_pycparser()
     known = set(known_functions)
     calls: List[Tuple[str, List[str], Optional[str]]] = []
+    metadata = {"used_ast": False, "used_regex": False, "parse_failed": False}
 
     if pycparser_module is None:
-        return find_calls_regex()
+        metadata["used_regex"] = True
+        return find_calls_regex(), metadata
 
     normalized = _normalize_c_source(f"void __cvas_wrapper(void) {{\n{body}\n}}")
     parser = pycparser_module.CParser()
@@ -1393,7 +1411,11 @@ def find_function_calls(
     try:
         ast = parser.parse(normalized)
     except Exception:
-        return find_calls_regex()
+        metadata["parse_failed"] = True
+        metadata["used_regex"] = True
+        return find_calls_regex(), metadata
+
+    metadata["used_ast"] = True
 
     def record_call(node: pycparser_module.c_ast.FuncCall, assigned: Optional[str]) -> None:
         if isinstance(node.name, pycparser_module.c_ast.ID):
@@ -1437,6 +1459,15 @@ def find_function_calls(
             walk(child)
 
     walk(ast)
+    return calls, metadata
+
+
+def find_function_calls(
+    body: str,
+    known_functions: Iterable[str]
+) -> List[Tuple[str, List[str], Optional[str]]]:
+    """Find function calls within known functions."""
+    calls, _ = _find_function_calls_with_metadata(body, known_functions)
     return calls
 
 
@@ -1469,9 +1500,22 @@ def build_call_graph(
             total_cycles=0
         )
 
+    analysis_details = {
+        "total_functions": len(functions),
+        "ast_functions": 0,
+        "regex_functions": 0,
+        "parse_failures": 0,
+    }
+
     # Build call relationships
     for _, caller_name, _, body in functions:
-        calls = find_function_calls(body, block_ids.keys())
+        calls, metadata = _find_function_calls_with_metadata(body, block_ids.keys())
+        if metadata["used_ast"]:
+            analysis_details["ast_functions"] += 1
+        if metadata["used_regex"]:
+            analysis_details["regex_functions"] += 1
+        if metadata["parse_failed"]:
+            analysis_details["parse_failures"] += 1
 
         for callee_name, _, _ in calls:
             if callee_name not in nodes:
@@ -1556,13 +1600,22 @@ def build_call_graph(
 
     has_recursion = any(node.is_recursive for node in nodes.values())
 
+    total_functions = max(1, analysis_details["total_functions"])
+    analysis_coverage = analysis_details["ast_functions"] / total_functions
+    fallback_ratio = analysis_details["regex_functions"] / total_functions
+    parse_penalty = min(0.5, analysis_details["parse_failures"] / total_functions)
+    analysis_confidence = max(0.0, min(1.0, analysis_coverage + 0.3 * fallback_ratio - parse_penalty))
+
     return CallGraph(
         nodes=nodes,
         entry_functions=entry_functions,
         call_chains=call_chains,
         critical_path=critical_path,
         max_depth=max_depth,
-        has_recursion=has_recursion
+        has_recursion=has_recursion,
+        analysis_coverage=round(analysis_coverage, 2),
+        analysis_confidence=round(analysis_confidence, 2),
+        analysis_details=analysis_details,
     )
 
 
@@ -1714,6 +1767,8 @@ def serialize_block(block: Block) -> Dict[str, object]:
             "has_branches": block.cfg.has_branches,
             "max_nesting_depth": block.cfg.max_nesting_depth,
             "analysis_confidence": block.cfg.analysis_confidence,
+            "analysis_coverage": block.cfg.analysis_coverage,
+            "analysis_confidence_score": block.cfg.analysis_confidence_score,
             "analysis_limitations": block.cfg.analysis_limitations
         }
 
@@ -1737,7 +1792,10 @@ def serialize_flow(flow: Flow) -> Dict[str, object]:
             "call_chains": flow.call_graph.call_chains,
             "critical_path": flow.call_graph.critical_path,
             "max_depth": flow.call_graph.max_depth,
-            "has_recursion": flow.call_graph.has_recursion
+            "has_recursion": flow.call_graph.has_recursion,
+            "analysis_coverage": flow.call_graph.analysis_coverage,
+            "analysis_confidence": flow.call_graph.analysis_confidence,
+            "analysis_details": flow.call_graph.analysis_details,
         }
 
     return data
