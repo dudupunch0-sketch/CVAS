@@ -294,12 +294,11 @@ def normalize_compound_operators(body: str) -> str:
 
 
 def split_statements(body: str) -> List[str]:
-    """Split statements by semicolons, ignoring those within brackets."""
+    """Split statements by semicolons, ignoring those within brackets/parentheses."""
     statements = []
     current = []
     paren_depth = 0
     bracket_depth = 0
-    brace_depth = 0
 
     for char in body:
         if char == "(":
@@ -311,11 +310,15 @@ def split_statements(body: str) -> List[str]:
         elif char == "]":
             bracket_depth = max(bracket_depth - 1, 0)
         elif char == "{":
-            brace_depth += 1
+            if "".join(current).strip():
+                current = []
+            continue
         elif char == "}":
-            brace_depth = max(brace_depth - 1, 0)
+            if "".join(current).strip():
+                current = []
+            continue
 
-        if char == ";" and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0:
+        if char == ";" and paren_depth == 0 and bracket_depth == 0:
             statement = "".join(current).strip()
             if statement:
                 statements.append(statement)
