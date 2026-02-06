@@ -178,6 +178,7 @@ class ControlFlowGraph:
     has_branches: bool
     max_nesting_depth: int
     analysis_confidence: str
+    analysis_coverage: float
     analysis_limitations: List[str]
 
 
@@ -207,6 +208,9 @@ class CallGraph:
     critical_path: List[str]      # Longest execution path
     max_depth: int
     has_recursion: bool
+    analysis_confidence: str
+    analysis_coverage: float
+    analysis_limitations: List[str]
 
 
 # ============================================================================
@@ -1277,9 +1281,10 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
         return idx if idx < len(cleaned) else None
 
     control_pattern = re.compile(r"\b(if|for|while|do)\b")
+    control_matches = list(control_pattern.finditer(cleaned))
     controls: List[Dict[str, object]] = []
 
-    for match in control_pattern.finditer(cleaned):
+    for match in control_matches:
         keyword = match.group(1)
         body_start: Optional[int] = None
         body_end: Optional[int] = None
@@ -1482,9 +1487,19 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
         else:
             depth = max(0, depth - 1)
 
-    if not analysis_limitations:
+    total_controls = len(control_matches)
+    resolved_controls = len(controls)
+    if total_controls == 0:
+        analysis_coverage = 1.0
+    else:
+        analysis_coverage = resolved_controls / total_controls
+
+    limitation_penalty = min(0.1 * len(analysis_limitations), 0.6)
+    confidence_score = max(0.0, analysis_coverage * (1 - limitation_penalty))
+
+    if confidence_score >= 0.85:
         analysis_confidence = "high"
-    elif len(analysis_limitations) <= 2:
+    elif confidence_score >= 0.6:
         analysis_confidence = "medium"
     else:
         analysis_confidence = "low"
@@ -1498,6 +1513,7 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
         has_branches=has_if,
         max_nesting_depth=max_depth,
         analysis_confidence=analysis_confidence,
+        analysis_coverage=round(analysis_coverage, 3),
         analysis_limitations=sorted(set(analysis_limitations))
     )
 
@@ -1509,7 +1525,7 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
 def find_function_calls(
     body: str,
     known_functions: Iterable[str]
-) -> List[Tuple[str, List[str], Optional[str]]]:
+) -> Tuple[List[Tuple[str, List[str], Optional[str]]], Dict[str, object]]:
     """Find function calls within known functions."""
     def find_calls_regex() -> List[Tuple[str, List[str], Optional[str]]]:
         cleaned = strip_comments_and_strings(body)
@@ -1537,7 +1553,10 @@ def find_function_calls(
 
     parsed = parse_translation_unit(f"void __cvas_wrapper(void) {{\n{body}\n}}")
     if parsed is None:
-        return find_calls_regex()
+        return find_calls_regex(), {
+            "parser": "regex",
+            "limitations": ["AST parse failed; regex fallback used"],
+        }
 
     pycparser_module, ast, generator, _ = parsed
 
@@ -1583,7 +1602,10 @@ def find_function_calls(
             walk(child)
 
     walk(ast)
-    return calls
+    return calls, {
+        "parser": "ast",
+        "limitations": [],
+    }
 
 
 def build_call_graph(
@@ -1615,9 +1637,17 @@ def build_call_graph(
             total_cycles=0
         )
 
+    total_analyses = len(functions)
+    ast_analyses = 0
+    analysis_limitations: List[str] = []
+
     # Build call relationships
     for _, caller_name, _, body in functions:
-        calls = find_function_calls(body, block_ids.keys())
+        calls, metadata = find_function_calls(body, block_ids.keys())
+        if metadata["parser"] == "ast":
+            ast_analyses += 1
+        else:
+            analysis_limitations.extend(metadata.get("limitations", []))
 
         for callee_name, _, _ in calls:
             if callee_name not in nodes:
@@ -1702,13 +1732,28 @@ def build_call_graph(
 
     has_recursion = any(node.is_recursive for node in nodes.values())
 
+    if total_analyses == 0:
+        analysis_coverage = 1.0
+    else:
+        analysis_coverage = ast_analyses / total_analyses
+
+    if analysis_coverage >= 0.85 and not analysis_limitations:
+        analysis_confidence = "high"
+    elif analysis_coverage >= 0.6:
+        analysis_confidence = "medium"
+    else:
+        analysis_confidence = "low"
+
     return CallGraph(
         nodes=nodes,
         entry_functions=entry_functions,
         call_chains=call_chains,
         critical_path=critical_path,
         max_depth=max_depth,
-        has_recursion=has_recursion
+        has_recursion=has_recursion,
+        analysis_confidence=analysis_confidence,
+        analysis_coverage=round(analysis_coverage, 3),
+        analysis_limitations=sorted(set(analysis_limitations))
     )
 
 
@@ -1792,7 +1837,7 @@ def build_model(source: str, rules: CycleRules) -> Dict[str, object]:
     # Analyze function calls for inter-block signals
     for _, caller_name, _, body in functions:
         caller_id = block_ids[caller_name]
-        calls = find_function_calls(body, block_ids.keys())
+        calls, _ = find_function_calls(body, block_ids.keys())
 
         for callee_name, args, assigned in calls:
             callee_id = block_ids[callee_name]
@@ -1860,6 +1905,7 @@ def serialize_block(block: Block) -> Dict[str, object]:
             "has_branches": block.cfg.has_branches,
             "max_nesting_depth": block.cfg.max_nesting_depth,
             "analysis_confidence": block.cfg.analysis_confidence,
+            "analysis_coverage": block.cfg.analysis_coverage,
             "analysis_limitations": block.cfg.analysis_limitations
         }
 
@@ -1883,7 +1929,10 @@ def serialize_flow(flow: Flow) -> Dict[str, object]:
             "call_chains": flow.call_graph.call_chains,
             "critical_path": flow.call_graph.critical_path,
             "max_depth": flow.call_graph.max_depth,
-            "has_recursion": flow.call_graph.has_recursion
+            "has_recursion": flow.call_graph.has_recursion,
+            "analysis_confidence": flow.call_graph.analysis_confidence,
+            "analysis_coverage": flow.call_graph.analysis_coverage,
+            "analysis_limitations": flow.call_graph.analysis_limitations
         }
 
     return data

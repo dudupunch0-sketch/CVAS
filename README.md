@@ -204,7 +204,10 @@ int main() {
       "call_chains": [...],
       "critical_path": [...],
       "max_depth": 3,
-      "has_recursion": false
+      "has_recursion": false,
+      "analysis_confidence": "high",
+      "analysis_coverage": 1.0,
+      "analysis_limitations": []
     }
   },
   "diagram_hint": {...},
@@ -264,7 +267,10 @@ int main() {
     "exit_blocks": ["process_exit"],
     "loops": [],
     "has_branches": true,
-    "max_nesting_depth": 2
+    "max_nesting_depth": 2,
+    "analysis_confidence": "high",
+    "analysis_coverage": 1.0,
+    "analysis_limitations": []
   }
 }
 ```
@@ -341,7 +347,10 @@ int main() {
     ],
     "critical_path": ["process", "apply_mask"],
     "max_depth": 1,
-    "has_recursion": false
+    "has_recursion": false,
+    "analysis_confidence": "high",
+    "analysis_coverage": 1.0,
+    "analysis_limitations": []
   }
 }
 ```
