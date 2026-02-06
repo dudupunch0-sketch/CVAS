@@ -3,6 +3,10 @@
 
 CVAS_START
 
+typedef struct {
+    int field;
+} SampleNode;
+
 static inline int sum_inline(
     int a,
     int b
@@ -29,6 +33,16 @@ int uses_calls(int input) {
     int value = sum_inline(input, 2);
     int result = multiline_params("ok", sum_inline);
     return value + result;
+}
+
+int compound_operator_edges(SampleNode *ptr, int *arr, int *value_ptr, int index) {
+    int total = 0;
+    arr[index] += 1;
+    ptr->field += 3;
+    arr[0] *= 2;
+    *value_ptr += 4;
+    total += arr[index];
+    return total;
 }
 
 CVAS_END

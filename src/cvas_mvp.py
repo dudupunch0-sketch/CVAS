@@ -291,20 +291,27 @@ def normalize_compound_operators(statement: str) -> str:
 
     This simplification allows the main parser to handle all operations uniformly.
     """
-    post_inc = re.match(r"^\s*(?P<var>\w+)\s*(?P<op>\+\+|--)\s*$", statement)
+    post_inc = re.match(
+        rf"^\s*(?P<var>{OPERAND_PATTERN})\s*(?P<op>\+\+|--)\s*$",
+        statement,
+    )
     if post_inc:
         var = post_inc.group("var")
         op = "+" if post_inc.group("op") == "++" else "-"
         return f"{var} = {var} {op} 1"
 
-    pre_inc = re.match(r"^\s*(?P<op>\+\+|--)\s*(?P<var>\w+)\s*$", statement)
+    pre_inc = re.match(
+        rf"^\s*(?P<op>\+\+|--)\s*(?P<var>{OPERAND_PATTERN})\s*$",
+        statement,
+    )
     if pre_inc:
         var = pre_inc.group("var")
         op = "+" if pre_inc.group("op") == "++" else "-"
         return f"{var} = {var} {op} 1"
 
     compound = re.match(
-        r"^\s*(?P<lhs>\w+)\s*(?P<op>[+\-*/%&|^]|<<|>>)=\s*(?P<rhs>.+)\s*$",
+        rf"^\s*(?P<lhs>{OPERAND_PATTERN})\s*(?P<op>[+\-*/%&|^]|<<|>>)"
+        r"=\s*(?P<rhs>.+)\s*$",
         statement,
     )
     if compound:
