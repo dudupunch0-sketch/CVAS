@@ -18,7 +18,6 @@ Features:
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
 import re
 import sys
@@ -27,6 +26,7 @@ from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
+from c_ast_utils import parse_statement, parse_translation_unit
 
 # ============================================================================
 # Constants
@@ -357,7 +357,18 @@ def extract_parenthesized_content(text: str, open_index: int) -> Optional[str]:
 
 def extract_keyword_condition(statement: str, keyword: str) -> Optional[str]:
     """Extract condition expression from a keyword statement like if/while."""
-    match = re.search(rf"\\b{re.escape(keyword)}\\b", statement)
+    parsed = parse_statement(statement)
+    if parsed:
+        pycparser_module, node, generator = parsed
+        if keyword == "if" and isinstance(node, pycparser_module.c_ast.If):
+            return generator.visit(node.cond).strip()
+        if keyword == "while":
+            if isinstance(node, pycparser_module.c_ast.While):
+                return generator.visit(node.cond).strip()
+            if isinstance(node, pycparser_module.c_ast.DoWhile):
+                return generator.visit(node.cond).strip()
+
+    match = re.search(rf"\b{re.escape(keyword)}\b", statement)
     if not match:
         return None
     open_index = statement.find("(", match.end())
@@ -387,7 +398,15 @@ def split_top_level_semicolons(text: str) -> List[str]:
 
 def extract_for_condition(statement: str) -> Optional[str]:
     """Extract the condition expression from a for loop statement."""
-    match = re.search(r"\\bfor\\b", statement)
+    parsed = parse_statement(statement)
+    if parsed:
+        pycparser_module, node, generator = parsed
+        if isinstance(node, pycparser_module.c_ast.For):
+            if node.cond is None:
+                return None
+            return generator.visit(node.cond).strip()
+
+    match = re.search(r"\bfor\b", statement)
     if not match:
         return None
     open_index = statement.find("(", match.end())
@@ -406,36 +425,6 @@ def extract_for_condition(statement: str) -> Optional[str]:
 # ============================================================================
 # Function Parsing
 # ============================================================================
-
-def _blank_preserving_newlines(text: str) -> str:
-    """Replace non-newline chars with spaces to keep line/column indices."""
-    return re.sub(r"[^\n]", " ", text)
-
-
-def _normalize_c_source(source: str) -> str:
-    """Normalize C source for parsing while preserving line numbers."""
-    lines = []
-    for line in source.splitlines(keepends=True):
-        if line.lstrip().startswith("#"):
-            lines.append("\n")
-        else:
-            lines.append(line)
-    normalized = "".join(lines)
-
-    normalized = re.sub(
-        r"__attribute__\s*\(\((?:.|\n)*?\)\)",
-        lambda match: _blank_preserving_newlines(match.group(0)),
-        normalized,
-        flags=re.DOTALL,
-    )
-    normalized = re.sub(
-        r"__declspec\s*\([^)]*\)",
-        lambda match: _blank_preserving_newlines(match.group(0)),
-        normalized,
-        flags=re.DOTALL,
-    )
-    return normalized
-
 
 def _compute_line_starts(source: str) -> List[int]:
     """Compute line start indices for a source string."""
@@ -547,30 +536,15 @@ def _find_function_definitions_regex(source: str) -> List[Tuple[str, str, str, s
     return functions
 
 
-def _load_pycparser():
-    """Return pycparser modules if available, else None."""
-    if importlib.util.find_spec("pycparser") is None:
-        return None
-    module = importlib.import_module("pycparser")
-    return module
-
-
 def find_function_definitions(source: str) -> List[Tuple[str, str, str, str]]:
     """Find all function definitions in source code."""
-    pycparser_module = _load_pycparser()
-    if pycparser_module is None:
+    parsed = parse_translation_unit(source)
+    if parsed is None:
         return _find_function_definitions_regex(source)
 
-    normalized = _normalize_c_source(source)
+    pycparser_module, ast, generator, normalized = parsed
     cleaned = strip_comments_and_strings(normalized)
-    parser = pycparser_module.CParser()
-    generator = pycparser_module.c_generator.CGenerator()
     functions = []
-
-    try:
-        ast = parser.parse(normalized)
-    except Exception:
-        return _find_function_definitions_regex(source)
 
     for ext in ast.ext:
         if not isinstance(ext, pycparser_module.c_ast.FuncDef):
@@ -1379,21 +1353,14 @@ def find_function_calls(
             found_calls.append((name, args, assigned))
         return found_calls
 
-    pycparser_module = _load_pycparser()
     known = set(known_functions)
     calls: List[Tuple[str, List[str], Optional[str]]] = []
 
-    if pycparser_module is None:
+    parsed = parse_translation_unit(f"void __cvas_wrapper(void) {{\n{body}\n}}")
+    if parsed is None:
         return find_calls_regex()
 
-    normalized = _normalize_c_source(f"void __cvas_wrapper(void) {{\n{body}\n}}")
-    parser = pycparser_module.CParser()
-    generator = pycparser_module.c_generator.CGenerator()
-
-    try:
-        ast = parser.parse(normalized)
-    except Exception:
-        return find_calls_regex()
+    pycparser_module, ast, generator, _ = parsed
 
     def record_call(node: pycparser_module.c_ast.FuncCall, assigned: Optional[str]) -> None:
         if isinstance(node.name, pycparser_module.c_ast.ID):
