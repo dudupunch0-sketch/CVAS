@@ -281,6 +281,88 @@ def strip_comments_and_strings(source: str) -> str:
     return re.sub(pattern, replacer, source)
 
 
+def expand_simple_function_macros(source: str) -> str:
+    """Expand simple function-like macros.
+
+    Only handles simple patterns like:
+        #define FUNC(x) real_func((x))
+        #define MAX(a,b) ((a) > (b) ? (a) : (b))
+
+    Does NOT handle:
+        - Multi-line macros
+        - Macros with ## or # operators
+        - Complex nested macros
+
+    Returns source with simple macros expanded inline.
+    """
+    lines = source.split("\n")
+    macros: Dict[str, Tuple[List[str], str]] = {}
+    output_lines = []
+
+    define_pattern = re.compile(r"^\s*#define\s+(\w+)\s*\(([^)]*)\)\s+(.+)$")
+
+    for line in lines:
+        match = define_pattern.match(line)
+        if match:
+            name = match.group(1)
+            params = [p.strip() for p in match.group(2).split(",") if p.strip()]
+            body = match.group(3).strip()
+
+            if "##" not in body and "#" not in body:
+                macros[name] = (params, body)
+
+            output_lines.append(line)
+        else:
+            output_lines.append(line)
+
+    if not macros:
+        return source
+
+    expanded_lines = []
+    for line in output_lines:
+        if define_pattern.match(line):
+            expanded_lines.append(line)
+            continue
+
+        expanded_line = line
+
+        for macro_name, (params, body) in macros.items():
+            pattern = rf"\b{re.escape(macro_name)}\s*\("
+
+            while re.search(pattern, expanded_line):
+                match = re.search(pattern, expanded_line)
+                if not match:
+                    break
+
+                start_idx = match.end() - 1
+                paren_content = extract_parenthesized_content(expanded_line, start_idx)
+
+                if paren_content is None:
+                    break
+
+                args = [arg.strip() for arg in split_top_level_commas(paren_content)]
+
+                if len(args) != len(params):
+                    break
+
+                expanded_body = body
+                for param, arg in zip(params, args):
+                    expanded_body = re.sub(
+                        rf"\b{re.escape(param)}\b",
+                        arg,
+                        expanded_body
+                    )
+
+                macro_call = expanded_line[
+                    match.start():match.end() + len(paren_content) + 1
+                ]
+                expanded_line = expanded_line.replace(macro_call, expanded_body, 1)
+
+        expanded_lines.append(expanded_line)
+
+    return "\n".join(expanded_lines)
+
+
 def normalize_compound_operators(statement: str) -> str:
     """Normalize compound operators in a single statement to simple form.
 
@@ -1816,6 +1898,8 @@ def build_call_graph(
 
 def build_model(source: str, rules: CycleRules) -> Dict[str, object]:
     """Build complete enhanced model with P1+P2 features."""
+
+    source = expand_simple_function_macros(source)
 
     region, found = extract_cvas_region(source)
     if not found:
