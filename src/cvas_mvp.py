@@ -431,7 +431,8 @@ def extract_for_condition(statement: str) -> Optional[str]:
         if isinstance(node, pycparser_module.c_ast.For):
             if node.cond is None:
                 return None
-            return generator.visit(node.cond).strip()
+            condition = generator.visit(node.cond).strip()
+            return condition if condition else None
 
     match = re.search(r"\bfor\b", statement)
     if not match:
