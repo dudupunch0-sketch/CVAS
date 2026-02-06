@@ -6,6 +6,17 @@
 
 ISP 알고리즘 C-model 분석을 위한 고급 파서로, `CVAS_START` / `CVAS_END` 구간을 분석하여 상세한 블록 다이어그램 및 제어 흐름 데이터를 생성합니다.
 
+## 📚 목차
+
+- [요구사항](#-요구사항)
+- [빠른 시작](#-빠른-시작)
+- [프로젝트 구조](#-프로젝트-구조)
+- [입력 파일 형식](#-입력-파일-형식)
+- [출력 JSON 구조](#-출력-json-구조)
+- [문제 해결](#-문제-해결)
+- [라이선스](#-라이선스)
+- [Change log](#-change-log)
+
 ## 🎉 v2.0 새로운 기능
 
 ### ✨ Priority 1: 완전한 데이터 흐름 추적
@@ -119,6 +130,17 @@ python src/cvas_mvp.py model.c \
 ```bash
 python src/cvas_mvp.py model.c --cycle-config cycle.json -o output.json
 ```
+
+---
+
+## 📁 프로젝트 구조
+
+- `src/cvas_mvp.py`: CVAS 핵심 파서 실행 파일
+- `src/c_ast_utils.py`: C AST 분석 유틸리티
+- `cvas_wrapper.py`: 분석부터 HTML 생성까지 실행하는 래퍼 스크립트
+- `json_to_html.py`: CVAS JSON을 단일 HTML로 변환
+- `viewer/`: 오프라인 HTML 뷰어 및 ELK.js 번들 자산
+- `fixtures/`: 파싱 회귀 테스트용 C 코드 모음
 
 ---
 
@@ -677,9 +699,11 @@ MIT License - 자유롭게 사용, 수정, 배포 가능합니다.
 
 **CVAS Enhanced v2.0** - Made with ❤️ for ISP algorithm optimization
 
-========
-change log:
-# CVAS v2.0 Release Notes
+---
+
+## 🗒️ Change log
+
+### CVAS v2.0 Release Notes
 
 ## 🎉 Major Release: Enhanced Analysis & Complete Data Flow
 
