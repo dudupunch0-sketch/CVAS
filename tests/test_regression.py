@@ -168,9 +168,7 @@ def test_fixture_regression(fixture_name: str, update_snapshots: bool):
                 lineterm="",
             )
 
-            pytest.fail(
-                f"Snapshot mismatch for {fixture_name}:\n\n" + "".join(diff)
-            )
+            pytest.fail(f"Snapshot mismatch for {fixture_name}:\n\n" + "".join(diff))
 
 
 def test_no_fixtures_found():
