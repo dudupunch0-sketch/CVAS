@@ -1415,6 +1415,89 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
             idx += 1
         return idx if idx < len(cleaned) else None
 
+    def is_keyword_at(start: int, keyword: str) -> bool:
+        end = start + len(keyword)
+        if not cleaned.startswith(keyword, start):
+            return False
+        before = cleaned[start - 1] if start > 0 else ""
+        after = cleaned[end] if end < len(cleaned) else ""
+        return (not before.isalnum() and before != "_") and (not after.isalnum() and after != "_")
+
+    def find_simple_statement_end(start: int) -> Optional[int]:
+        stmt_end = start
+        paren_depth = 0
+        brace_depth = 0
+        saw_brace = False
+        while stmt_end < len(cleaned):
+            ch = cleaned[stmt_end]
+            if ch == "(":
+                paren_depth += 1
+            elif ch == ")":
+                paren_depth = max(0, paren_depth - 1)
+            elif ch == "{":
+                brace_depth += 1
+                saw_brace = True
+            elif ch == "}":
+                if brace_depth > 0:
+                    brace_depth -= 1
+                    if brace_depth == 0 and saw_brace and paren_depth == 0:
+                        return stmt_end
+            elif ch == ";" and paren_depth == 0 and brace_depth == 0:
+                return stmt_end
+            stmt_end += 1
+        return None
+
+    def find_statement_end(start: int) -> Optional[int]:
+        stmt_start = next_nonspace(start)
+        if stmt_start is None:
+            return None
+        for keyword in ("if", "for", "while", "do"):
+            if is_keyword_at(stmt_start, keyword):
+                paren_start = next_nonspace(stmt_start + len(keyword))
+                if keyword == "do":
+                    body_start = next_nonspace(stmt_start + len(keyword))
+                else:
+                    if paren_start is None or cleaned[paren_start] != "(":
+                        return None
+                    if paren_start not in paren_pairs:
+                        return None
+                    paren_end = paren_pairs[paren_start]
+                    body_start = next_nonspace(paren_end + 1)
+                if body_start is None:
+                    return None
+                if cleaned[body_start] == "{":
+                    body_end = brace_pairs.get(body_start)
+                else:
+                    body_end = find_statement_end(body_start)
+                if body_end is None:
+                    return None
+                if keyword == "do":
+                    after_body = next_nonspace(body_end + 1)
+                    if after_body is not None and is_keyword_at(after_body, "while"):
+                        while_paren = next_nonspace(after_body + len("while"))
+                        if while_paren is None or cleaned[while_paren] != "(":
+                            return body_end
+                        if while_paren not in paren_pairs:
+                            return body_end
+                        while_paren_end = paren_pairs[while_paren]
+                        while_end = find_simple_statement_end(while_paren_end + 1)
+                        return while_end if while_end is not None else body_end
+                    return body_end
+                if keyword == "if":
+                    maybe_else = next_nonspace(body_end + 1)
+                    if maybe_else is not None and cleaned.startswith("else", maybe_else):
+                        after_else = next_nonspace(maybe_else + len("else"))
+                        if after_else is None:
+                            return body_end
+                        if cleaned[after_else] == "{":
+                            else_end = brace_pairs.get(after_else)
+                        else:
+                            else_end = find_statement_end(after_else)
+                        if else_end is not None:
+                            return else_end
+                return body_end
+        return find_simple_statement_end(stmt_start)
+
     control_pattern = re.compile(r"\b(if|for|while|do)\b")
     control_matches = list(control_pattern.finditer(cleaned))
     controls: List[Dict[str, object]] = []
@@ -1441,17 +1524,25 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
                 continue
             paren_end = paren_pairs[paren_start]
             body_start = next_nonspace(paren_end + 1)
-            if body_start is None or cleaned[body_start] != "{":
+            if body_start is None:
                 analysis_limitations.append(
-                    f"{keyword} body without braces is not expanded into CFG blocks"
+                    f"missing {keyword} body; control range not resolved"
                 )
                 continue
-            body_end = brace_pairs.get(body_start)
-            if body_end is None:
-                analysis_limitations.append(
-                    f"unmatched '{{' in {keyword} body; control range not resolved"
-                )
-                continue
+            if cleaned[body_start] == "{":
+                body_end = brace_pairs.get(body_start)
+                if body_end is None:
+                    analysis_limitations.append(
+                        f"unmatched '{{' in {keyword} body; control range not resolved"
+                    )
+                    continue
+            else:
+                body_end = find_statement_end(body_start)
+                if body_end is None:
+                    analysis_limitations.append(
+                        f"{keyword} single-statement body has no terminating ';' or matching '}}'"
+                    )
+                    continue
 
             if keyword == "if":
                 maybe_else = next_nonspace(body_end + 1)
@@ -1465,28 +1556,39 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
                             analysis_limitations.append(
                                 "unmatched '{' in else body; else range not resolved"
                             )
-                    elif after_else is not None and cleaned.startswith("if", after_else):
-                        analysis_limitations.append(
-                            "else-if chains are flattened in CFG"
-                        )
-                    else:
-                        analysis_limitations.append(
-                            "else body without braces is not expanded into CFG blocks"
-                        )
+                    elif after_else is not None:
+                        else_body_start = after_else
+                        else_body_end = find_statement_end(after_else)
+                        if else_body_end is None:
+                            analysis_limitations.append(
+                                "else single-statement body has no terminating ';' or matching '}'"
+                            )
+                        elif is_keyword_at(after_else, "if"):
+                            analysis_limitations.append(
+                                "else-if chains are flattened in CFG"
+                            )
 
         elif keyword == "do":
             body_start = next_nonspace(match.end())
-            if body_start is None or cleaned[body_start] != "{":
+            if body_start is None:
                 analysis_limitations.append(
-                    "do body without braces is not expanded into CFG blocks"
+                    "missing do body; control range not resolved"
                 )
                 continue
-            body_end = brace_pairs.get(body_start)
-            if body_end is None:
-                analysis_limitations.append(
-                    "unmatched '{' in do body; control range not resolved"
-                )
-                continue
+            if cleaned[body_start] == "{":
+                body_end = brace_pairs.get(body_start)
+                if body_end is None:
+                    analysis_limitations.append(
+                        "unmatched '{' in do body; control range not resolved"
+                    )
+                    continue
+            else:
+                body_end = find_statement_end(body_start)
+                if body_end is None:
+                    analysis_limitations.append(
+                        "do single-statement body has no terminating ';' or matching '}'"
+                    )
+                    continue
 
         if body_start is None or body_end is None:
             continue
