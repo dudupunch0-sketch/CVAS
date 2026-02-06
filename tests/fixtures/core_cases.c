@@ -17,6 +17,10 @@ static int helper(int v) {
 
 int analyze(int *arr, int len, Node *node) {
     int sum = 0;
+    int a = 1;
+    int b = 2;
+    int c = 4;
+    int mask = a & b | c;
     if (len > 0) {
         sum = arr[0];
     } else {

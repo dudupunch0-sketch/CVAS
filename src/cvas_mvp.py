@@ -35,17 +35,18 @@ from c_ast_utils import parse_statement, parse_translation_unit
 MARKER_START = "CVAS_START"
 MARKER_END = "CVAS_END"
 
-# Operator precedence (higher = higher priority)
+# Operator precedence (higher = higher priority, aligned with C standard)
 OPERATOR_PRECEDENCE = {
-    "<<": 5, ">>": 5,     # Shift (highest)
-    "*": 4, "/": 4, "%": 4,  # Multiply, divide, modulo
-    "+": 3, "-": 3,       # Add, subtract
-    "&": 2,               # Bitwise AND
-    "^": 2,               # Bitwise XOR
-    "|": 2,               # Bitwise OR
-    "<": 1, ">": 1,       # Comparison
-    "<=": 1, ">=": 1,
-    "==": 1, "!=": 1,
+    "*": 11, "/": 11, "%": 11,     # Multiplicative
+    "+": 10, "-": 10,              # Additive
+    "<<": 9, ">>": 9,              # Shift
+    "<": 8, ">": 8, "<=": 8, ">=": 8,  # Relational
+    "==": 7, "!=": 7,              # Equality
+    "&": 6,                        # Bitwise AND
+    "^": 5,                        # Bitwise XOR
+    "|": 4,                        # Bitwise OR
+    "&&": 3,                       # Logical AND
+    "||": 2,                       # Logical OR
 }
 
 OPERATORS = set(OPERATOR_PRECEDENCE.keys())
@@ -658,6 +659,7 @@ def tokenize_expression(expr: str) -> List[str]:
         r'<<=|>>=|'             # Shift assignment (not used after normalization)
         r'<<|>>|'               # Shift operators
         r'<=|>=|==|!=|'         # Comparison operators
+        r'&&|\|\||'             # Logical operators
         r'[+\-*/%<>&|^]|'       # Arithmetic and bitwise
         r'\(|\)'                # Parentheses
     )
@@ -710,7 +712,7 @@ def is_store_target(token: str) -> bool:
 
 def classify_operator(op: str) -> str:
     """Classify operator into operation type."""
-    if op in {"<", ">", "<=", ">=", "==", "!="}:
+    if op in {"<", ">", "<=", ">=", "==", "!=", "&&", "||"}:
         return "compare"
     if op in {"*", "/", "%"}:
         return "multiply"
