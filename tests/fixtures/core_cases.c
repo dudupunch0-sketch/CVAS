@@ -20,7 +20,12 @@ int analyze(int *arr, int len, Node *node) {
     int a = 1;
     int b = 2;
     int c = 4;
+    int cond = a && b;
+    int x = cond ? a : b;
     int mask = a & b | c;
+    if ((a && b) || c) {
+        sum += 1;
+    }
     if (len > 0) {
         sum = arr[0];
     } else {
