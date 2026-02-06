@@ -21,10 +21,9 @@ import argparse
 import json
 import re
 import sys
-from collections import defaultdict, deque
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from c_ast_utils import parse_statement, parse_translation_unit
 
@@ -1386,7 +1385,6 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
 
     # Detect control structures
     has_if = bool(re.search(r"\bif\b", cleaned))
-    has_loop = bool(re.search(r"\b(for|while|do)\b", cleaned))
 
     analysis_limitations: List[str] = []
 
