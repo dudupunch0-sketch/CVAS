@@ -705,14 +705,19 @@ def extract_operations(
     for statement in statements:
         # Normalize C-style declarations with assignment: "int y = x" -> "y = x"
         declaration_match = re.match(
-            r"(?P<type>(?:unsigned|signed|short|long|int|float|double|char|bool|void|"
-            r"size_t|ssize_t|uint\d+_t|int\d+_t)(?:\s+|\s*\*\s*)+)"
-            r"(?P<lhs>\w+)\s*=\s*(?P<rhs>.+)",
+            r"(?P<type>(?:"
+            r"(?:typedef|const|volatile|unsigned|signed|short|long|int|float|double|"
+            r"char|bool|void|size_t|ssize_t|uint\d+_t|int\d+_t|[\w_]+)\s+|"
+            r"struct\s+\w+\s+|enum\s+\w+\s+|\s*\*\s*"
+            r")+)"
+            r"(?P<lhs>[\w_\s\*\[\]]+)\s*=\s*(?P<rhs>.+)",
             statement
         )
         if declaration_match:
+            lhs = re.sub(r"\s*\*\s*", "", declaration_match.group("lhs"))
+            lhs = re.sub(r"\[.*?\]", "", lhs).strip()
             statement = (
-                f"{declaration_match.group('lhs')} = "
+                f"{lhs} = "
                 f"{declaration_match.group('rhs').strip()}"
             )
 
