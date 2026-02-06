@@ -1,0 +1,167 @@
+{
+  "blocks_summary": [
+    {
+      "block_id": "B1",
+      "block_name": "swap_values",
+      "estimated_cycles": 2,
+      "ops_summary": {
+        "add": 0,
+        "bitwise": 0,
+        "compare": 0,
+        "const": 0,
+        "copy": 1,
+        "load": 2,
+        "logic": 0,
+        "multiply": 0,
+        "shift": 0,
+        "store": 0
+      }
+    }
+  ],
+  "call_graph": {
+    "analysis_confidence": "low",
+    "analysis_coverage": 0.0,
+    "analysis_limitations": [
+      "AST parse failed; regex fallback used"
+    ],
+    "call_chains": [
+      [
+        "swap_values"
+      ]
+    ],
+    "critical_path": [
+      "swap_values"
+    ],
+    "entry_functions": [
+      "swap_values"
+    ],
+    "has_recursion": false,
+    "max_depth": 0,
+    "nodes": {
+      "swap_values": {
+        "block_id": "B1",
+        "call_depth": 0,
+        "callees": [],
+        "callers": [],
+        "function_name": "swap_values",
+        "is_recursive": false,
+        "self_cycles": 2,
+        "total_cycles": 2
+      }
+    }
+  },
+  "cfg": [
+    {
+      "block_name": "swap_values",
+      "cfg": {
+        "analysis_confidence": "high",
+        "analysis_coverage": 1.0,
+        "analysis_limitations": [],
+        "basic_blocks": [
+          {
+            "block_id": "swap_values_b1",
+            "block_type": "entry",
+            "operations": [],
+            "parent_function": "swap_values",
+            "predecessors": [],
+            "successors": [
+              "swap_values_b2"
+            ]
+          },
+          {
+            "block_id": "swap_values_b2",
+            "block_type": "sequential",
+            "operations": [
+              "B1_op_1",
+              "B1_op_2",
+              "B1_op_3"
+            ],
+            "parent_function": "swap_values",
+            "predecessors": [
+              "swap_values_b1"
+            ],
+            "successors": [
+              "swap_values_b3"
+            ]
+          },
+          {
+            "block_id": "swap_values_b3",
+            "block_type": "exit",
+            "operations": [],
+            "parent_function": "swap_values",
+            "predecessors": [
+              "swap_values_b2"
+            ],
+            "successors": []
+          }
+        ],
+        "entry_block": "swap_values_b1",
+        "exit_blocks": [
+          "swap_values_b3"
+        ],
+        "function_name": "swap_values",
+        "has_branches": false,
+        "loops": [],
+        "max_nesting_depth": 0
+      }
+    }
+  ],
+  "operations": [
+    {
+      "inputs": [
+        "*a"
+      ],
+      "op_id": "B1_op_1",
+      "op_type": "load",
+      "outputs": [
+        "temp"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "*b"
+      ],
+      "op_id": "B1_op_2",
+      "op_type": "load",
+      "outputs": [
+        "a"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "temp"
+      ],
+      "op_id": "B1_op_3",
+      "op_type": "copy",
+      "outputs": [
+        "b"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    }
+  ],
+  "signals": [
+    {
+      "comment": "copy flow",
+      "destination_id": "B1_op_3",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "temp",
+      "source_id": "B1_op_1",
+      "source_type": "operation"
+    },
+    {
+      "comment": "direct return",
+      "destination_id": "B1",
+      "destination_type": "block",
+      "direction": "out",
+      "signal_name": "return",
+      "source_id": "B1_op_1",
+      "source_type": "operation"
+    }
+  ]
+}

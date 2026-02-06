@@ -1,0 +1,446 @@
+{
+  "blocks_summary": [
+    {
+      "block_id": "B1",
+      "block_name": "add",
+      "estimated_cycles": 1,
+      "ops_summary": {
+        "add": 1,
+        "bitwise": 0,
+        "compare": 0,
+        "const": 0,
+        "copy": 0,
+        "load": 0,
+        "logic": 0,
+        "multiply": 0,
+        "shift": 0,
+        "store": 0
+      }
+    },
+    {
+      "block_id": "B2",
+      "block_name": "mul",
+      "estimated_cycles": 1,
+      "ops_summary": {
+        "add": 0,
+        "bitwise": 0,
+        "compare": 0,
+        "const": 0,
+        "copy": 0,
+        "load": 0,
+        "logic": 0,
+        "multiply": 1,
+        "shift": 0,
+        "store": 0
+      }
+    },
+    {
+      "block_id": "B3",
+      "block_name": "compute",
+      "estimated_cycles": 2,
+      "ops_summary": {
+        "add": 0,
+        "bitwise": 0,
+        "compare": 0,
+        "const": 1,
+        "copy": 1,
+        "load": 0,
+        "logic": 0,
+        "multiply": 0,
+        "shift": 0,
+        "store": 0
+      }
+    }
+  ],
+  "call_graph": {
+    "analysis_confidence": "low",
+    "analysis_coverage": 0.0,
+    "analysis_limitations": [
+      "AST parse failed; regex fallback used"
+    ],
+    "call_chains": [
+      [
+        "compute",
+        "add"
+      ]
+    ],
+    "critical_path": [
+      "compute",
+      "add"
+    ],
+    "entry_functions": [
+      "compute"
+    ],
+    "has_recursion": false,
+    "max_depth": 0,
+    "nodes": {
+      "add": {
+        "block_id": "B1",
+        "call_depth": 0,
+        "callees": [],
+        "callers": [
+          "compute"
+        ],
+        "function_name": "add",
+        "is_recursive": false,
+        "self_cycles": 1,
+        "total_cycles": 1
+      },
+      "compute": {
+        "block_id": "B3",
+        "call_depth": 0,
+        "callees": [
+          "add",
+          "mul"
+        ],
+        "callers": [],
+        "function_name": "compute",
+        "is_recursive": false,
+        "self_cycles": 2,
+        "total_cycles": 4
+      },
+      "mul": {
+        "block_id": "B2",
+        "call_depth": 0,
+        "callees": [],
+        "callers": [
+          "compute"
+        ],
+        "function_name": "mul",
+        "is_recursive": false,
+        "self_cycles": 1,
+        "total_cycles": 1
+      }
+    }
+  },
+  "cfg": [
+    {
+      "block_name": "add",
+      "cfg": {
+        "analysis_confidence": "high",
+        "analysis_coverage": 1.0,
+        "analysis_limitations": [],
+        "basic_blocks": [
+          {
+            "block_id": "add_b1",
+            "block_type": "entry",
+            "operations": [],
+            "parent_function": "add",
+            "predecessors": [],
+            "successors": [
+              "add_b2"
+            ]
+          },
+          {
+            "block_id": "add_b2",
+            "block_type": "sequential",
+            "operations": [
+              "B1_op_1"
+            ],
+            "parent_function": "add",
+            "predecessors": [
+              "add_b1"
+            ],
+            "successors": [
+              "add_b3"
+            ]
+          },
+          {
+            "block_id": "add_b3",
+            "block_type": "exit",
+            "operations": [],
+            "parent_function": "add",
+            "predecessors": [
+              "add_b2"
+            ],
+            "successors": []
+          }
+        ],
+        "entry_block": "add_b1",
+        "exit_blocks": [
+          "add_b3"
+        ],
+        "function_name": "add",
+        "has_branches": false,
+        "loops": [],
+        "max_nesting_depth": 0
+      }
+    },
+    {
+      "block_name": "mul",
+      "cfg": {
+        "analysis_confidence": "high",
+        "analysis_coverage": 1.0,
+        "analysis_limitations": [],
+        "basic_blocks": [
+          {
+            "block_id": "mul_b1",
+            "block_type": "entry",
+            "operations": [],
+            "parent_function": "mul",
+            "predecessors": [],
+            "successors": [
+              "mul_b2"
+            ]
+          },
+          {
+            "block_id": "mul_b2",
+            "block_type": "sequential",
+            "operations": [
+              "B2_op_1"
+            ],
+            "parent_function": "mul",
+            "predecessors": [
+              "mul_b1"
+            ],
+            "successors": [
+              "mul_b3"
+            ]
+          },
+          {
+            "block_id": "mul_b3",
+            "block_type": "exit",
+            "operations": [],
+            "parent_function": "mul",
+            "predecessors": [
+              "mul_b2"
+            ],
+            "successors": []
+          }
+        ],
+        "entry_block": "mul_b1",
+        "exit_blocks": [
+          "mul_b3"
+        ],
+        "function_name": "mul",
+        "has_branches": false,
+        "loops": [],
+        "max_nesting_depth": 0
+      }
+    },
+    {
+      "block_name": "compute",
+      "cfg": {
+        "analysis_confidence": "high",
+        "analysis_coverage": 1.0,
+        "analysis_limitations": [],
+        "basic_blocks": [
+          {
+            "block_id": "compute_b1",
+            "block_type": "entry",
+            "operations": [],
+            "parent_function": "compute",
+            "predecessors": [],
+            "successors": [
+              "compute_b2"
+            ]
+          },
+          {
+            "block_id": "compute_b2",
+            "block_type": "sequential",
+            "operations": [
+              "B3_op_1",
+              "B3_op_2"
+            ],
+            "parent_function": "compute",
+            "predecessors": [
+              "compute_b1"
+            ],
+            "successors": [
+              "compute_b3"
+            ]
+          },
+          {
+            "block_id": "compute_b3",
+            "block_type": "exit",
+            "operations": [],
+            "parent_function": "compute",
+            "predecessors": [
+              "compute_b2"
+            ],
+            "successors": []
+          }
+        ],
+        "entry_block": "compute_b1",
+        "exit_blocks": [
+          "compute_b3"
+        ],
+        "function_name": "compute",
+        "has_branches": false,
+        "loops": [],
+        "max_nesting_depth": 0
+      }
+    }
+  ],
+  "operations": [
+    {
+      "inputs": [
+        "a",
+        "b"
+      ],
+      "op_id": "B1_op_1",
+      "op_type": "add",
+      "outputs": [
+        "return"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "a",
+        "b"
+      ],
+      "op_id": "B2_op_1",
+      "op_type": "multiply",
+      "outputs": [
+        "return"
+      ],
+      "parent_block_id": "B2",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "y"
+      ],
+      "op_id": "B3_op_1",
+      "op_type": "copy",
+      "outputs": [
+        "sum"
+      ],
+      "parent_block_id": "B3",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "2"
+      ],
+      "op_id": "B3_op_2",
+      "op_type": "const",
+      "outputs": [
+        "return"
+      ],
+      "parent_block_id": "B3",
+      "source_line": null
+    }
+  ],
+  "signals": [
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_1",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "a",
+      "source_id": "B1",
+      "source_type": "block"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_1",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "b",
+      "source_id": "B1",
+      "source_type": "block"
+    },
+    {
+      "comment": "return flow",
+      "destination_id": "B1",
+      "destination_type": "block",
+      "direction": "out",
+      "signal_name": "return",
+      "source_id": "B1_op_1",
+      "source_type": "operation"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B2_op_1",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "a",
+      "source_id": "B2",
+      "source_type": "block"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B2_op_1",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "b",
+      "source_id": "B2",
+      "source_type": "block"
+    },
+    {
+      "comment": "return flow",
+      "destination_id": "B2",
+      "destination_type": "block",
+      "direction": "out",
+      "signal_name": "return",
+      "source_id": "B2_op_1",
+      "source_type": "operation"
+    },
+    {
+      "comment": "copy flow",
+      "destination_id": "B3_op_1",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "y",
+      "source_id": "B3",
+      "source_type": "block"
+    },
+    {
+      "comment": "return flow",
+      "destination_id": "B3",
+      "destination_type": "block",
+      "direction": "out",
+      "signal_name": "return",
+      "source_id": "B3_op_2",
+      "source_type": "operation"
+    },
+    {
+      "comment": "argument flow",
+      "destination_id": "B1",
+      "destination_type": "block",
+      "direction": "in",
+      "signal_name": "x",
+      "source_id": "B3",
+      "source_type": "block"
+    },
+    {
+      "comment": "argument flow",
+      "destination_id": "B1",
+      "destination_type": "block",
+      "direction": "in",
+      "signal_name": "y",
+      "source_id": "B3",
+      "source_type": "block"
+    },
+    {
+      "comment": "return flow",
+      "destination_id": "B3",
+      "destination_type": "block",
+      "direction": "out",
+      "signal_name": "sum",
+      "source_id": "B1",
+      "source_type": "block"
+    },
+    {
+      "comment": "argument flow",
+      "destination_id": "B2",
+      "destination_type": "block",
+      "direction": "in",
+      "signal_name": "sum",
+      "source_id": "B3",
+      "source_type": "block"
+    },
+    {
+      "comment": "argument flow",
+      "destination_id": "B2",
+      "destination_type": "block",
+      "direction": "in",
+      "signal_name": "2",
+      "source_id": "B3",
+      "source_type": "block"
+    }
+  ]
+}
