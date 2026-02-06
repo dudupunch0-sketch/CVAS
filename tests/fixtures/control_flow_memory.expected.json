@@ -1,0 +1,478 @@
+{
+  "operations": [
+    {
+      "op_id": "B1_op_1",
+      "op_type": "add",
+      "inputs": [
+        "input",
+        "1"
+      ],
+      "outputs": [
+        "return"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "op_id": "B2_op_1",
+      "op_type": "copy",
+      "inputs": [
+        "0"
+      ],
+      "outputs": [
+        "sum"
+      ],
+      "parent_block_id": "B2",
+      "source_line": null
+    },
+    {
+      "op_id": "B2_op_2",
+      "op_type": "copy",
+      "inputs": [
+        "*ptr"
+      ],
+      "outputs": [
+        "sum"
+      ],
+      "parent_block_id": "B2",
+      "source_line": null
+    },
+    {
+      "op_id": "B2_op_3",
+      "op_type": "copy",
+      "inputs": [
+        "arr[0]"
+      ],
+      "outputs": [
+        "sum"
+      ],
+      "parent_block_id": "B2",
+      "source_line": null
+    },
+    {
+      "op_id": "B2_op_4",
+      "op_type": "add",
+      "inputs": [
+        "sum",
+        "arr[i]"
+      ],
+      "outputs": [
+        "sum"
+      ],
+      "parent_block_id": "B2",
+      "source_line": null
+    },
+    {
+      "op_id": "B2_op_5",
+      "op_type": "copy",
+      "inputs": [
+        "0"
+      ],
+      "outputs": [
+        "j"
+      ],
+      "parent_block_id": "B2",
+      "source_line": null
+    },
+    {
+      "op_id": "B2_op_6",
+      "op_type": "add",
+      "inputs": [
+        "sum",
+        "node->value"
+      ],
+      "outputs": [
+        "sum"
+      ],
+      "parent_block_id": "B2",
+      "source_line": null
+    },
+    {
+      "op_id": "B2_op_7",
+      "op_type": "add",
+      "inputs": [
+        "j",
+        "1"
+      ],
+      "outputs": [
+        "j"
+      ],
+      "parent_block_id": "B2",
+      "source_line": null
+    },
+    {
+      "op_id": "B2_op_8",
+      "op_type": "copy",
+      "inputs": [
+        "sum"
+      ],
+      "outputs": [
+        "sum"
+      ],
+      "parent_block_id": "B2",
+      "source_line": null
+    }
+  ],
+  "signals": [
+    {
+      "source_id": "B1",
+      "source_type": "block",
+      "destination_id": "B1_op_1",
+      "destination_type": "operation",
+      "signal_name": "input",
+      "direction": "internal",
+      "comment": "operand flow"
+    },
+    {
+      "source_id": "B1_op_1",
+      "source_type": "operation",
+      "destination_id": "B1",
+      "destination_type": "block",
+      "signal_name": "return",
+      "direction": "out",
+      "comment": "return flow"
+    },
+    {
+      "source_id": "B2_op_3",
+      "source_type": "operation",
+      "destination_id": "B2_op_4",
+      "destination_type": "operation",
+      "signal_name": "sum",
+      "direction": "internal",
+      "comment": "operand flow"
+    },
+    {
+      "source_id": "B2_op_4",
+      "source_type": "operation",
+      "destination_id": "B2_op_6",
+      "destination_type": "operation",
+      "signal_name": "sum",
+      "direction": "internal",
+      "comment": "operand flow"
+    },
+    {
+      "source_id": "B2_op_5",
+      "source_type": "operation",
+      "destination_id": "B2_op_7",
+      "destination_type": "operation",
+      "signal_name": "j",
+      "direction": "internal",
+      "comment": "operand flow"
+    },
+    {
+      "source_id": "B2_op_6",
+      "source_type": "operation",
+      "destination_id": "B2_op_8",
+      "destination_type": "operation",
+      "signal_name": "sum",
+      "direction": "internal",
+      "comment": "copy flow"
+    },
+    {
+      "source_id": "B2_op_8",
+      "source_type": "operation",
+      "destination_id": "B2",
+      "destination_type": "block",
+      "signal_name": "return",
+      "direction": "out",
+      "comment": "direct return"
+    }
+  ],
+  "cfg": {
+    "helper": {
+      "function_name": "helper",
+      "basic_blocks": [
+        {
+          "block_id": "helper_b1",
+          "parent_function": "helper",
+          "operations": [],
+          "predecessors": [],
+          "successors": [
+            "helper_b2"
+          ],
+          "block_type": "entry"
+        },
+        {
+          "block_id": "helper_b2",
+          "parent_function": "helper",
+          "operations": [
+            "B1_op_1"
+          ],
+          "predecessors": [
+            "helper_b1"
+          ],
+          "successors": [
+            "helper_b3"
+          ],
+          "block_type": "sequential"
+        },
+        {
+          "block_id": "helper_b3",
+          "parent_function": "helper",
+          "operations": [],
+          "predecessors": [
+            "helper_b2"
+          ],
+          "successors": [],
+          "block_type": "exit"
+        }
+      ],
+      "entry_block": "helper_b1",
+      "exit_blocks": [
+        "helper_b3"
+      ],
+      "loops": [],
+      "has_branches": false,
+      "max_nesting_depth": 0,
+      "analysis_confidence": "high",
+      "analysis_limitations": []
+    },
+    "analyze": {
+      "function_name": "analyze",
+      "basic_blocks": [
+        {
+          "block_id": "analyze_b1",
+          "parent_function": "analyze",
+          "operations": [],
+          "predecessors": [],
+          "successors": [
+            "analyze_b2"
+          ],
+          "block_type": "entry"
+        },
+        {
+          "block_id": "analyze_b2",
+          "parent_function": "analyze",
+          "operations": [
+            "B2_op_1",
+            "B2_op_2",
+            "B2_op_3",
+            "B2_op_4",
+            "B2_op_5",
+            "B2_op_6",
+            "B2_op_7",
+            "B2_op_8"
+          ],
+          "predecessors": [
+            "analyze_b1"
+          ],
+          "successors": [
+            "analyze_b3"
+          ],
+          "block_type": "sequential"
+        },
+        {
+          "block_id": "analyze_b3",
+          "parent_function": "analyze",
+          "operations": [],
+          "predecessors": [
+            "analyze_b2"
+          ],
+          "successors": [
+            "analyze_b4",
+            "analyze_b5"
+          ],
+          "block_type": "conditional_branch"
+        },
+        {
+          "block_id": "analyze_b4",
+          "parent_function": "analyze",
+          "operations": [],
+          "predecessors": [
+            "analyze_b3"
+          ],
+          "successors": [
+            "analyze_b6"
+          ],
+          "block_type": "sequential"
+        },
+        {
+          "block_id": "analyze_b5",
+          "parent_function": "analyze",
+          "operations": [],
+          "predecessors": [
+            "analyze_b3"
+          ],
+          "successors": [
+            "analyze_b6"
+          ],
+          "block_type": "sequential"
+        },
+        {
+          "block_id": "analyze_b6",
+          "parent_function": "analyze",
+          "operations": [],
+          "predecessors": [
+            "analyze_b4",
+            "analyze_b5"
+          ],
+          "successors": [
+            "analyze_b7"
+          ],
+          "block_type": "sequential"
+        },
+        {
+          "block_id": "analyze_b7",
+          "parent_function": "analyze",
+          "operations": [],
+          "predecessors": [
+            "analyze_b6",
+            "analyze_b8"
+          ],
+          "successors": [
+            "analyze_b8",
+            "analyze_b9"
+          ],
+          "block_type": "loop_header"
+        },
+        {
+          "block_id": "analyze_b8",
+          "parent_function": "analyze",
+          "operations": [],
+          "predecessors": [
+            "analyze_b7"
+          ],
+          "successors": [
+            "analyze_b7"
+          ],
+          "block_type": "loop_body"
+        },
+        {
+          "block_id": "analyze_b9",
+          "parent_function": "analyze",
+          "operations": [],
+          "predecessors": [
+            "analyze_b7"
+          ],
+          "successors": [
+            "analyze_b10"
+          ],
+          "block_type": "sequential"
+        },
+        {
+          "block_id": "analyze_b10",
+          "parent_function": "analyze",
+          "operations": [],
+          "predecessors": [
+            "analyze_b9",
+            "analyze_b11"
+          ],
+          "successors": [
+            "analyze_b11",
+            "analyze_b12"
+          ],
+          "block_type": "loop_header"
+        },
+        {
+          "block_id": "analyze_b11",
+          "parent_function": "analyze",
+          "operations": [],
+          "predecessors": [
+            "analyze_b10"
+          ],
+          "successors": [
+            "analyze_b10"
+          ],
+          "block_type": "loop_body"
+        },
+        {
+          "block_id": "analyze_b12",
+          "parent_function": "analyze",
+          "operations": [],
+          "predecessors": [
+            "analyze_b10"
+          ],
+          "successors": [
+            "analyze_b13"
+          ],
+          "block_type": "sequential"
+        },
+        {
+          "block_id": "analyze_b13",
+          "parent_function": "analyze",
+          "operations": [],
+          "predecessors": [
+            "analyze_b12"
+          ],
+          "successors": [],
+          "block_type": "exit"
+        }
+      ],
+      "entry_block": "analyze_b1",
+      "exit_blocks": [
+        "analyze_b13"
+      ],
+      "loops": [
+        {
+          "loop_id": "analyze_loop_1",
+          "header_block": "analyze_b7",
+          "body_blocks": [
+            "analyze_b8"
+          ],
+          "exit_blocks": [
+            "analyze_b9"
+          ],
+          "nesting_level": 1,
+          "estimated_iterations": "unknown"
+        },
+        {
+          "loop_id": "analyze_loop_2",
+          "header_block": "analyze_b10",
+          "body_blocks": [
+            "analyze_b11"
+          ],
+          "exit_blocks": [
+            "analyze_b12"
+          ],
+          "nesting_level": 1,
+          "estimated_iterations": "unknown"
+        }
+      ],
+      "has_branches": true,
+      "max_nesting_depth": 1,
+      "analysis_confidence": "high",
+      "analysis_limitations": []
+    }
+  },
+  "call_graph": {
+    "nodes": {
+      "helper": {
+        "function_name": "helper",
+        "block_id": "B1",
+        "callers": [],
+        "callees": [],
+        "call_depth": 0,
+        "is_recursive": false,
+        "self_cycles": 1,
+        "total_cycles": 1
+      },
+      "analyze": {
+        "function_name": "analyze",
+        "block_id": "B2",
+        "callers": [],
+        "callees": [],
+        "call_depth": 0,
+        "is_recursive": false,
+        "self_cycles": 2,
+        "total_cycles": 2
+      }
+    },
+    "entry_functions": [
+      "helper",
+      "analyze"
+    ],
+    "call_chains": [
+      [
+        "helper"
+      ],
+      [
+        "analyze"
+      ]
+    ],
+    "critical_path": [
+      "analyze"
+    ],
+    "max_depth": 0,
+    "has_recursion": false
+  }
+}
