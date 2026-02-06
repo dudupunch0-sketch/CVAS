@@ -178,6 +178,14 @@ int main() {
 
 ---
 
+## 🧪 파싱 회귀용 Fixture
+
+복잡한 함수 정의/호출 파싱 실패 사례를 회귀 방지용으로 아래 파일에 정리했습니다.
+
+- `fixtures/function_parsing_edge_cases.c`
+
+---
+
 ## 📊 출력 JSON 구조
 
 ### v2.0 확장된 구조
