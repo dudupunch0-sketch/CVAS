@@ -613,6 +613,35 @@ def parse_expression_ops(
         ops[-1].outputs = [output_target]
         var_producers[output_target] = ("operation", ops[-1].op_id)
         last_output = output_target
+    elif output_target and last_output:
+        op_id = f"{block_id}_op_{op_index}"
+        op_index += 1
+        operation = Operation(
+            op_id=op_id,
+            op_type="copy",
+            inputs=[last_output],
+            outputs=[output_target],
+            parent_block_id=block_id,
+        )
+        ops.append(operation)
+
+        producer = var_producers.get(last_output)
+        if producer:
+            source_type, source_id = producer
+            edges.append(
+                Signal(
+                    source_id=source_id,
+                    source_type=source_type,
+                    destination_id=op_id,
+                    destination_type="operation",
+                    signal_name=last_output,
+                    direction="internal",
+                    comment="copy flow",
+                )
+            )
+
+        var_producers[output_target] = ("operation", op_id)
+        last_output = output_target
 
     return ops, op_index, last_output, edges
 
@@ -628,15 +657,15 @@ def handle_simple_assignment(
     op_index: int,
     var_producers: Dict[str, Tuple[str, str]]
 ) -> Tuple[List[Operation], int, List[Signal]]:
-    """Handle simple assignment: var = other_var.
+    """Handle simple assignment: var = operand.
 
     Creates a "copy" operation to maintain complete data flow tracking.
     """
     operations = []
     edges = []
 
-    # rhs must be a simple identifier
-    if re.match(r'^\w+$', rhs.strip()):
+    # rhs must be a single operand (identifier, deref/member/index, literal)
+    if is_operand(rhs.strip()):
         op_id = f"{block_id}_op_{op_index}"
         op_index += 1
 
@@ -729,7 +758,7 @@ def extract_operations(
             rhs = assignment_match.group("rhs").strip()
 
             # Check if simple assignment
-            if re.match(r'^\w+$', rhs):
+            if is_operand(rhs):
                 # Simple: a = b
                 ops, op_index, new_edges = handle_simple_assignment(
                     lhs, rhs, block_id, op_index, var_producers
