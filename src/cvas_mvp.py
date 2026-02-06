@@ -36,47 +36,68 @@ MARKER_END = "CVAS_END"
 
 # Operator precedence (higher = higher priority, aligned with C standard)
 OPERATOR_PRECEDENCE = {
-    "*": 11, "/": 11, "%": 11,     # Multiplicative
-    "+": 10, "-": 10,              # Additive
-    "<<": 9, ">>": 9,              # Shift
-    "<": 8, ">": 8, "<=": 8, ">=": 8,  # Relational
-    "==": 7, "!=": 7,              # Equality
-    "&": 6,                        # Bitwise AND
-    "^": 5,                        # Bitwise XOR
-    "|": 4,                        # Bitwise OR
-    "&&": 3,                       # Logical AND
-    "||": 2,                       # Logical OR
-    "?:": 1,                       # Ternary conditional
+    "*": 11,
+    "/": 11,
+    "%": 11,  # Multiplicative
+    "+": 10,
+    "-": 10,  # Additive
+    "<<": 9,
+    ">>": 9,  # Shift
+    "<": 8,
+    ">": 8,
+    "<=": 8,
+    ">=": 8,  # Relational
+    "==": 7,
+    "!=": 7,  # Equality
+    "&": 6,  # Bitwise AND
+    "^": 5,  # Bitwise XOR
+    "|": 4,  # Bitwise OR
+    "&&": 3,  # Logical AND
+    "||": 2,  # Logical OR
+    "?:": 1,  # Ternary conditional
 }
 
 OPERATORS = set(OPERATOR_PRECEDENCE.keys())
 
 # Keywords to exclude from function call detection
-KEYWORDS = {"if", "for", "while", "switch", "return", "sizeof", "do", "else", "break", "continue"}
+KEYWORDS = {
+    "if",
+    "for",
+    "while",
+    "switch",
+    "return",
+    "sizeof",
+    "do",
+    "else",
+    "break",
+    "continue",
+}
 
 
 # ============================================================================
 # Data Models - Enhanced
 # ============================================================================
 
+
 @dataclass
 class CycleRules:
     """Hardware cycle estimation rules - Extended for new operation types."""
+
     add_per_cycle: int = 4
     compare_per_cycle: int = 4
     logic_per_cycle: int = 4
     mul_per_cycle: int = 1
-    copy_per_cycle: int = 8      # Simple assignments are very fast
-    shift_per_cycle: int = 2     # Bit shifts
-    bitwise_per_cycle: int = 4   # Bitwise operations
-    const_per_cycle: int = 8     # Literal assignments
-    load_per_cycle: int = 4      # Memory reads
-    store_per_cycle: int = 4     # Memory writes
+    copy_per_cycle: int = 8  # Simple assignments are very fast
+    shift_per_cycle: int = 2  # Bit shifts
+    bitwise_per_cycle: int = 4  # Bitwise operations
+    const_per_cycle: int = 8  # Literal assignments
+    load_per_cycle: int = 4  # Memory reads
+    store_per_cycle: int = 4  # Memory writes
 
     @classmethod
     def from_json(cls, path: Path) -> "CycleRules":
         """Load cycle rules from JSON file."""
-        data = json.loads(path.read_text(encoding='utf-8'))
+        data = json.loads(path.read_text(encoding="utf-8"))
         return cls(
             add_per_cycle=int(data.get("add_per_cycle", cls.add_per_cycle)),
             compare_per_cycle=int(data.get("compare_per_cycle", cls.compare_per_cycle)),
@@ -93,9 +114,16 @@ class CycleRules:
     def validate(self) -> None:
         """Validate cycle rules are positive."""
         rules = [
-            self.add_per_cycle, self.compare_per_cycle, self.logic_per_cycle, self.mul_per_cycle,
-            self.copy_per_cycle, self.shift_per_cycle, self.bitwise_per_cycle,
-            self.const_per_cycle, self.load_per_cycle, self.store_per_cycle,
+            self.add_per_cycle,
+            self.compare_per_cycle,
+            self.logic_per_cycle,
+            self.mul_per_cycle,
+            self.copy_per_cycle,
+            self.shift_per_cycle,
+            self.bitwise_per_cycle,
+            self.const_per_cycle,
+            self.load_per_cycle,
+            self.store_per_cycle,
         ]
         if any(r <= 0 for r in rules):
             raise ValueError("All cycle rules must be positive integers")
@@ -104,27 +132,38 @@ class CycleRules:
 @dataclass
 class OpSummary:
     """Summary of operations by type - Extended."""
+
     add: int = 0
     compare: int = 0
     logic: int = 0
     multiply: int = 0
-    copy: int = 0         # Simple assignments
-    shift: int = 0        # Bit shift operations
-    bitwise: int = 0      # Bitwise AND/OR/XOR
-    const: int = 0        # Literal assignments
-    load: int = 0         # Memory reads
-    store: int = 0        # Memory writes
+    copy: int = 0  # Simple assignments
+    shift: int = 0  # Bit shift operations
+    bitwise: int = 0  # Bitwise AND/OR/XOR
+    const: int = 0  # Literal assignments
+    load: int = 0  # Memory reads
+    store: int = 0  # Memory writes
 
     def total(self) -> int:
         """Return total operation count."""
-        return (self.add + self.compare + self.logic + self.multiply +
-                self.copy + self.shift + self.bitwise +
-                self.const + self.load + self.store)
+        return (
+            self.add
+            + self.compare
+            + self.logic
+            + self.multiply
+            + self.copy
+            + self.shift
+            + self.bitwise
+            + self.const
+            + self.load
+            + self.store
+        )
 
 
 @dataclass
 class Operation:
     """Single operation node within a block."""
+
     op_id: str
     op_type: str  # "add", "compare", "logic", "multiply", "copy", "shift", "bitwise", "const", "load", "store"
     inputs: List[str]
@@ -136,6 +175,7 @@ class Operation:
 @dataclass
 class Signal:
     """Connection between blocks or operations."""
+
     source_id: str
     source_type: str  # "block" or "operation"
     destination_id: str
@@ -149,20 +189,23 @@ class Signal:
 # P2: Control Flow Graph
 # ============================================================================
 
+
 @dataclass
 class BasicBlock:
     """Basic block in control flow graph."""
+
     block_id: str
     parent_function: str
     operations: List[str]  # Operation IDs
     predecessors: List[str]  # Previous block IDs
-    successors: List[str]    # Next block IDs
+    successors: List[str]  # Next block IDs
     block_type: str  # "entry", "sequential", "conditional_branch", "loop_header", "loop_body", "exit"
 
 
 @dataclass
 class LoopInfo:
     """Loop structure information."""
+
     loop_id: str
     header_block: str
     body_blocks: List[str]
@@ -174,6 +217,7 @@ class LoopInfo:
 @dataclass
 class ControlFlowGraph:
     """Function-level control flow graph."""
+
     function_name: str
     basic_blocks: List[BasicBlock]
     entry_block: str
@@ -190,26 +234,29 @@ class ControlFlowGraph:
 # P2: Call Graph
 # ============================================================================
 
+
 @dataclass
 class CallGraphNode:
     """Node in function call graph."""
+
     function_name: str
     block_id: str
-    callers: List[str]      # Functions that call this
-    callees: List[str]      # Functions this calls
-    call_depth: int         # Depth from entry points
+    callers: List[str]  # Functions that call this
+    callees: List[str]  # Functions this calls
+    call_depth: int  # Depth from entry points
     is_recursive: bool
-    self_cycles: int        # Estimated cycles for this function only
-    total_cycles: int       # Including called functions
+    self_cycles: int  # Estimated cycles for this function only
+    total_cycles: int  # Including called functions
 
 
 @dataclass
 class CallGraph:
     """Complete function call graph."""
+
     nodes: Dict[str, CallGraphNode]
     entry_functions: List[str]  # Functions not called by others
     call_chains: List[List[str]]  # All possible execution paths
-    critical_path: List[str]      # Longest execution path
+    critical_path: List[str]  # Longest execution path
     max_depth: int
     has_recursion: bool
     analysis_confidence: str
@@ -221,9 +268,11 @@ class CallGraph:
 # Enhanced Block with CFG
 # ============================================================================
 
+
 @dataclass
 class Block:
     """Function represented as a block with CFG."""
+
     block_id: str
     block_name: str
     inputs: List[str]
@@ -231,16 +280,16 @@ class Block:
     internal_ops_summary: OpSummary
     estimated_cycles: int
     note: str
-    position: Dict[str, str] = field(default_factory=lambda: {
-        "x": "TBD by drawing tool",
-        "y": "TBD by drawing tool"
-    })
+    position: Dict[str, str] = field(
+        default_factory=lambda: {"x": "TBD by drawing tool", "y": "TBD by drawing tool"}
+    )
     cfg: Optional[ControlFlowGraph] = None  # NEW: Control flow graph
 
 
 @dataclass
 class Flow:
     """Execution flow metadata - Enhanced."""
+
     execution_order: List[str]
     parallelism: str = "unknown"
     call_graph: Optional[CallGraph] = None  # NEW: Function call graph
@@ -249,6 +298,7 @@ class Flow:
 # ============================================================================
 # Preprocessing Functions
 # ============================================================================
+
 
 def extract_cvas_region(source: str) -> Tuple[str, bool]:
     """Extract code between CVAS_START and CVAS_END markers."""
@@ -267,14 +317,12 @@ def extract_cvas_region(source: str) -> Tuple[str, bool]:
 
 def strip_comments_and_strings(source: str) -> str:
     """Remove comments and string literals while preserving positions."""
+
     def replacer(match: re.Match[str]) -> str:
         return " " * len(match.group(0))
 
     pattern = re.compile(
-        r"//.*?$"
-        r"|/\*.*?\*/"
-        r"|\"(\\.|[^\\\"])*\""
-        r"|'(\\.|[^\\'])*'",
+        r"//.*?$" r"|/\*.*?\*/" r"|\"(\\.|[^\\\"])*\"" r"|'(\\.|[^\\'])*'",
         re.DOTALL | re.MULTILINE,
     )
     return re.sub(pattern, replacer, source)
@@ -347,13 +395,11 @@ def expand_simple_function_macros(source: str) -> str:
                 expanded_body = body
                 for param, arg in zip(params, args):
                     expanded_body = re.sub(
-                        rf"\b{re.escape(param)}\b",
-                        arg,
-                        expanded_body
+                        rf"\b{re.escape(param)}\b", arg, expanded_body
                     )
 
                 macro_call = expanded_line[
-                    match.start():match.end() + len(paren_content) + 1
+                    match.start() : match.end() + len(paren_content) + 1
                 ]
                 expanded_line = expanded_line.replace(macro_call, expanded_body, 1)
 
@@ -459,7 +505,7 @@ def extract_parenthesized_content(text: str, open_index: int) -> Optional[str]:
         elif char == ")":
             depth -= 1
             if depth == 0:
-                return text[open_index + 1:index]
+                return text[open_index + 1 : index]
     return None
 
 
@@ -535,6 +581,7 @@ def extract_for_condition(statement: str) -> Optional[str]:
 # Function Parsing
 # ============================================================================
 
+
 def _compute_line_starts(source: str) -> List[int]:
     """Compute line start indices for a source string."""
     starts = [0]
@@ -577,12 +624,16 @@ def _find_matching_paren(source: str, close_index: int) -> Optional[int]:
 def _strip_attributes_between(source: str, start: int, end: int) -> str:
     """Return text between indices with attributes removed."""
     segment = source[start:end]
-    segment = re.sub(r"__attribute__\s*\(\((?:.|\n)*?\)\)", " ", segment, flags=re.DOTALL)
+    segment = re.sub(
+        r"__attribute__\s*\(\((?:.|\n)*?\)\)", " ", segment, flags=re.DOTALL
+    )
     segment = re.sub(r"__declspec\s*\([^)]*\)", " ", segment, flags=re.DOTALL)
     return segment
 
 
-def _extract_name_before_paren(source: str, open_paren: int) -> Optional[Tuple[str, int]]:
+def _extract_name_before_paren(
+    source: str, open_paren: int
+) -> Optional[Tuple[str, int]]:
     """Extract function name and its start index before the parameter list."""
     idx = open_paren - 1
     while idx >= 0 and source[idx].isspace():
@@ -733,12 +784,12 @@ def split_top_level_commas(text: str) -> List[str]:
 # ============================================================================
 
 OPERAND_PATTERN = (
-    r'(?:'
-    r'(?:\([A-Za-z_]\w*(?:\s*\*+)?\)\s*)*'  # Optional casts like (int) or (struct Foo*)
-    r'(?:[+\-!~*&]+)?'                      # Optional unary operators (no whitespace)
-    r'(?:[A-Za-z_]\w*|0x[0-9A-Fa-f]+|\d+)'  # Base identifier or numeric literal
-    r'(?:\s*(?:\[[^\]]+\]|\.\w+|->\w+))*'   # Indexing and member access
-    r')'
+    r"(?:"
+    r"(?:\([A-Za-z_]\w*(?:\s*\*+)?\)\s*)*"  # Optional casts like (int) or (struct Foo*)
+    r"(?:[+\-!~*&]+)?"  # Optional unary operators (no whitespace)
+    r"(?:[A-Za-z_]\w*|0x[0-9A-Fa-f]+|\d+)"  # Base identifier or numeric literal
+    r"(?:\s*(?:\[[^\]]+\]|\.\w+|->\w+))*"  # Indexing and member access
+    r")"
 )
 OPERAND_REGEX = re.compile(rf"^{OPERAND_PATTERN}$")
 CAST_PATTERN = re.compile(r"^\(\s*[A-Za-z_]\w*(?:\s*\*+)?\s*\)\s*")
@@ -748,14 +799,14 @@ NUMERIC_LITERAL_PATTERN = re.compile(r"^(?:0x[0-9A-Fa-f]+|\d+)$")
 def tokenize_expression(expr: str) -> List[str]:
     """Tokenize expression including bitwise and shift operators."""
     pattern = re.compile(
-        rf'{OPERAND_PATTERN}|'  # Operands with indexing/member access/casts/unary ops
-        r'<<=|>>=|'             # Shift assignment (not used after normalization)
-        r'<<|>>|'               # Shift operators
-        r'<=|>=|==|!=|'         # Comparison operators
-        r'&&|\|\||'             # Logical operators
-        r'\?|:|'                # Ternary tokens
-        r'[+\-*/%<>&|^]|'       # Arithmetic and bitwise
-        r'\(|\)'                # Parentheses
+        rf"{OPERAND_PATTERN}|"  # Operands with indexing/member access/casts/unary ops
+        r"<<=|>>=|"  # Shift assignment (not used after normalization)
+        r"<<|>>|"  # Shift operators
+        r"<=|>=|==|!=|"  # Comparison operators
+        r"&&|\|\||"  # Logical operators
+        r"\?|:|"  # Ternary tokens
+        r"[+\-*/%<>&|^]|"  # Arithmetic and bitwise
+        r"\(|\)"  # Parentheses
     )
     return [token.strip() for token in pattern.findall(expr) if token.strip()]
 
@@ -772,7 +823,7 @@ def _strip_casts(token: str) -> str:
         match = CAST_PATTERN.match(stripped)
         if not match:
             break
-        stripped = stripped[match.end():].lstrip()
+        stripped = stripped[match.end() :].lstrip()
     return stripped
 
 
@@ -790,7 +841,11 @@ def classify_operand(token: str) -> str:
         unary_ops = ""
         base = stripped
 
-    if NUMERIC_LITERAL_PATTERN.fullmatch(base) and "*" not in unary_ops and "&" not in unary_ops:
+    if (
+        NUMERIC_LITERAL_PATTERN.fullmatch(base)
+        and "*" not in unary_ops
+        and "&" not in unary_ops
+    ):
         return "literal"
 
     if "*" in unary_ops or "[" in base or "." in base or "->" in base:
@@ -999,12 +1054,13 @@ def parse_expression_ops(
 # P1: Simple Assignment Handling
 # ============================================================================
 
+
 def handle_simple_assignment(
     lhs: str,
     rhs: str,
     block_id: str,
     op_index: int,
-    var_producers: Dict[str, Tuple[str, str]]
+    var_producers: Dict[str, Tuple[str, str]],
 ) -> Tuple[List[Operation], int, List[Signal]]:
     """Handle simple assignment: var = operand.
 
@@ -1094,7 +1150,7 @@ def handle_simple_assignment(
                 op_type=op_type,
                 inputs=[rhs],
                 outputs=[lhs],
-                parent_block_id=block_id
+                parent_block_id=block_id,
             )
             operations.append(operation)
 
@@ -1110,7 +1166,7 @@ def handle_simple_assignment(
                         destination_type="operation",
                         signal_name=rhs,
                         direction="internal",
-                        comment=comment
+                        comment=comment,
                     )
                 )
 
@@ -1123,11 +1179,9 @@ def handle_simple_assignment(
 # Operation Extraction - Enhanced
 # ============================================================================
 
+
 def extract_operations(
-    body: str,
-    block_id: str,
-    block_inputs: List[str],
-    has_return: bool
+    body: str, block_id: str, block_inputs: List[str], has_return: bool
 ) -> Tuple[List[Operation], List[Signal], OpSummary]:
     """Extract all operations from function body.
 
@@ -1161,18 +1215,17 @@ def extract_operations(
             r"struct\s+\w+\s+|enum\s+\w+\s+|\s*\*\s*"
             r")+)"
             r"(?P<lhs>[\w_\s\*\[\]]+)\s*=\s*(?P<rhs>.+)",
-            statement
+            statement,
         )
         if declaration_match:
             lhs = re.sub(r"\s*\*\s*", "", declaration_match.group("lhs"))
             lhs = re.sub(r"\[.*?\]", "", lhs).strip()
-            statement = (
-                f"{lhs} = "
-                f"{declaration_match.group('rhs').strip()}"
-            )
+            statement = f"{lhs} = " f"{declaration_match.group('rhs').strip()}"
 
         # Assignment: var = expr
-        assignment_match = re.match(r"(?P<lhs>[^=]+?)\s*=(?!=)\s*(?P<rhs>.+)", statement)
+        assignment_match = re.match(
+            r"(?P<lhs>[^=]+?)\s*=(?!=)\s*(?P<rhs>.+)", statement
+        )
         if assignment_match:
             lhs = assignment_match.group("lhs").strip()
             rhs = assignment_match.group("rhs").strip()
@@ -1240,7 +1293,7 @@ def extract_operations(
             expr = return_match.group("expr").strip()
 
             # Simple return variable
-            if re.match(r'^\w+$', expr):
+            if re.match(r"^\w+$", expr):
                 producer = var_producers.get(expr)
                 if producer:
                     source_type, source_id = producer
@@ -1252,7 +1305,7 @@ def extract_operations(
                             destination_type="block",
                             signal_name="return",
                             direction="out",
-                            comment="direct return"
+                            comment="direct return",
                         )
                     )
             else:
@@ -1283,7 +1336,11 @@ def extract_operations(
             output_name = f"cond_{condition_counter}"
             condition_counter += 1
             ops, op_index, _, new_edges = parse_expression_ops(
-                for_condition, block_id, op_index, var_producers, output_target=output_name
+                for_condition,
+                block_id,
+                op_index,
+                var_producers,
+                output_target=output_name,
             )
             operations.extend(ops)
             edges.extend(new_edges)
@@ -1295,7 +1352,11 @@ def extract_operations(
                 output_name = f"cond_{condition_counter}"
                 condition_counter += 1
                 ops, op_index, _, new_edges = parse_expression_ops(
-                    condition_expr, block_id, op_index, var_producers, output_target=output_name
+                    condition_expr,
+                    block_id,
+                    op_index,
+                    var_producers,
+                    output_target=output_name,
                 )
                 operations.extend(ops)
                 edges.extend(new_edges)
@@ -1332,6 +1393,7 @@ def extract_operations(
 # Cycle Estimation - Enhanced
 # ============================================================================
 
+
 def estimate_cycles(summary: OpSummary, rules: CycleRules) -> int:
     """Estimate execution cycles based on operation counts."""
     cycles = 0
@@ -1352,6 +1414,7 @@ def estimate_cycles(summary: OpSummary, rules: CycleRules) -> int:
 # P2: Control Flow Analysis
 # ============================================================================
 
+
 def detect_control_notes(body: str) -> str:
     """Detect loops and conditionals in function body."""
     cleaned = strip_comments_and_strings(body)
@@ -1370,7 +1433,9 @@ def detect_control_notes(body: str) -> str:
     return "; ".join(notes)
 
 
-def analyze_control_flow(body: str, function_name: str, operations: List[Operation]) -> ControlFlowGraph:
+def analyze_control_flow(
+    body: str, function_name: str, operations: List[Operation]
+) -> ControlFlowGraph:
     """Analyze control flow and build CFG.
 
     This is a simplified CFG builder that identifies:
@@ -1419,7 +1484,9 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
             return False
         before = cleaned[start - 1] if start > 0 else ""
         after = cleaned[end] if end < len(cleaned) else ""
-        return (not before.isalnum() and before != "_") and (not after.isalnum() and after != "_")
+        return (not before.isalnum() and before != "_") and (
+            not after.isalnum() and after != "_"
+        )
 
     def find_simple_statement_end(start: int) -> Optional[int]:
         stmt_end = start
@@ -1483,7 +1550,9 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
                     return body_end
                 if keyword == "if":
                     maybe_else = next_nonspace(body_end + 1)
-                    if maybe_else is not None and cleaned.startswith("else", maybe_else):
+                    if maybe_else is not None and cleaned.startswith(
+                        "else", maybe_else
+                    ):
                         after_else = next_nonspace(maybe_else + len("else"))
                         if after_else is None:
                             return body_end
@@ -1610,7 +1679,9 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
     loop_index = 0
     pending_ops = [op.op_id for op in operations]
 
-    def make_block(block_type: str, operations_list: Optional[List[str]] = None) -> BasicBlock:
+    def make_block(
+        block_type: str, operations_list: Optional[List[str]] = None
+    ) -> BasicBlock:
         nonlocal block_index
         block_index += 1
         block = BasicBlock(
@@ -1619,7 +1690,7 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
             operations=operations_list or [],
             predecessors=[],
             successors=[],
-            block_type=block_type
+            block_type=block_type,
         )
         blocks.append(block)
         return block
@@ -1685,14 +1756,16 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
             connect(header_block, exit_block)
             connect(body_block, header_block)
 
-            loops.append(LoopInfo(
-                loop_id=f"{function_name}_loop_{loop_index}",
-                header_block=header_block.block_id,
-                body_blocks=[body_block.block_id],
-                exit_blocks=[exit_block.block_id],
-                nesting_level=1,
-                estimated_iterations="unknown"
-            ))
+            loops.append(
+                LoopInfo(
+                    loop_id=f"{function_name}_loop_{loop_index}",
+                    header_block=header_block.block_id,
+                    body_blocks=[body_block.block_id],
+                    exit_blocks=[exit_block.block_id],
+                    nesting_level=1,
+                    estimated_iterations="unknown",
+                )
+            )
 
             current = exit_block
 
@@ -1749,7 +1822,7 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
         max_nesting_depth=max_depth,
         analysis_confidence=analysis_confidence,
         analysis_coverage=round(analysis_coverage, 3),
-        analysis_limitations=sorted(set(analysis_limitations))
+        analysis_limitations=sorted(set(analysis_limitations)),
     )
 
 
@@ -1757,11 +1830,12 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
 # P2: Function Call Analysis
 # ============================================================================
 
+
 def find_function_calls(
-    body: str,
-    known_functions: Iterable[str]
+    body: str, known_functions: Iterable[str]
 ) -> Tuple[List[Tuple[str, List[str], Optional[str]]], Dict[str, object]]:
     """Find function calls within known functions."""
+
     def find_calls_regex() -> List[Tuple[str, List[str], Optional[str]]]:
         cleaned = strip_comments_and_strings(body)
         call_pattern = re.compile(
@@ -1795,7 +1869,9 @@ def find_function_calls(
 
     pycparser_module, ast, generator, _ = parsed
 
-    def record_call(node: pycparser_module.c_ast.FuncCall, assigned: Optional[str]) -> None:
+    def record_call(
+        node: pycparser_module.c_ast.FuncCall, assigned: Optional[str]
+    ) -> None:
         if isinstance(node.name, pycparser_module.c_ast.ID):
             name = node.name.name
         else:
@@ -1846,7 +1922,7 @@ def find_function_calls(
 def build_call_graph(
     functions: List[Tuple[str, str, str, str]],
     block_ids: Dict[str, str],
-    blocks: List[Block]
+    blocks: List[Block],
 ) -> CallGraph:
     """Build function call graph with dependency analysis.
 
@@ -1869,7 +1945,7 @@ def build_call_graph(
             call_depth=0,
             is_recursive=False,
             self_cycles=block.estimated_cycles if block else 0,
-            total_cycles=0
+            total_cycles=0,
         )
 
     total_analyses = len(functions)
@@ -1988,13 +2064,14 @@ def build_call_graph(
         has_recursion=has_recursion,
         analysis_confidence=analysis_confidence,
         analysis_coverage=round(analysis_coverage, 3),
-        analysis_limitations=sorted(set(analysis_limitations))
+        analysis_limitations=sorted(set(analysis_limitations)),
     )
 
 
 # ============================================================================
 # Model Building - Enhanced
 # ============================================================================
+
 
 def build_model(source: str, rules: CycleRules) -> Dict[str, object]:
     """Build complete enhanced model with P1+P2 features."""
@@ -2003,7 +2080,9 @@ def build_model(source: str, rules: CycleRules) -> Dict[str, object]:
 
     region, found = extract_cvas_region(source)
     if not found:
-        print(f"WARNING: {MARKER_START} ~ {MARKER_END} region not found", file=sys.stderr)
+        print(
+            f"WARNING: {MARKER_START} ~ {MARKER_END} region not found", file=sys.stderr
+        )
         return {
             "blocks": [],
             "operations": [],
@@ -2067,7 +2146,7 @@ def build_model(source: str, rules: CycleRules) -> Dict[str, object]:
                 internal_ops_summary=summary,
                 estimated_cycles=cycles,
                 note=note,
-                cfg=cfg
+                cfg=cfg,
             )
         )
 
@@ -2112,7 +2191,7 @@ def build_model(source: str, rules: CycleRules) -> Dict[str, object]:
     flow = Flow(
         execution_order=[block.block_id for block in blocks],
         parallelism="sequential",  # Can be enhanced with dependency analysis
-        call_graph=call_graph
+        call_graph=call_graph,
     )
 
     return {
@@ -2122,7 +2201,7 @@ def build_model(source: str, rules: CycleRules) -> Dict[str, object]:
         "flow": serialize_flow(flow),
         "diagram_hint": {"layout": "TBD by drawing tool"},
         "note": "Enhanced with P1+P2: complete data flow, CFG, call graph",
-        "analysis_version": "2.0"
+        "analysis_version": "2.0",
     }
 
 
@@ -2143,7 +2222,7 @@ def serialize_block(block: Block) -> Dict[str, object]:
             "max_nesting_depth": block.cfg.max_nesting_depth,
             "analysis_confidence": block.cfg.analysis_confidence,
             "analysis_coverage": block.cfg.analysis_coverage,
-            "analysis_limitations": block.cfg.analysis_limitations
+            "analysis_limitations": block.cfg.analysis_limitations,
         }
 
     return data
@@ -2151,16 +2230,12 @@ def serialize_block(block: Block) -> Dict[str, object]:
 
 def serialize_flow(flow: Flow) -> Dict[str, object]:
     """Serialize flow with call graph."""
-    data = {
-        "execution_order": flow.execution_order,
-        "parallelism": flow.parallelism
-    }
+    data = {"execution_order": flow.execution_order, "parallelism": flow.parallelism}
 
     if flow.call_graph:
         data["call_graph"] = {
             "nodes": {
-                name: asdict(node)
-                for name, node in flow.call_graph.nodes.items()
+                name: asdict(node) for name, node in flow.call_graph.nodes.items()
             },
             "entry_functions": flow.call_graph.entry_functions,
             "call_chains": flow.call_graph.call_chains,
@@ -2169,7 +2244,7 @@ def serialize_flow(flow: Flow) -> Dict[str, object]:
             "has_recursion": flow.call_graph.has_recursion,
             "analysis_confidence": flow.call_graph.analysis_confidence,
             "analysis_coverage": flow.call_graph.analysis_coverage,
-            "analysis_limitations": flow.call_graph.analysis_limitations
+            "analysis_limitations": flow.call_graph.analysis_limitations,
         }
 
     return data
@@ -2178,6 +2253,7 @@ def serialize_flow(flow: Flow) -> Dict[str, object]:
 # ============================================================================
 # CLI
 # ============================================================================
+
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
@@ -2195,73 +2271,43 @@ New in v2.0:
   - Control Flow Graph (CFG) analysis
   - Function call graph with critical path detection
   - Bitwise and shift operation support
-        """
+        """,
     )
 
+    parser.add_argument("input", type=Path, help="Path to C source file")
     parser.add_argument(
-        "input",
-        type=Path,
-        help="Path to C source file"
+        "-o", "--output", type=Path, help="Output JSON path (default: stdout)"
+    )
+    parser.add_argument("--cycle-config", type=Path, help="JSON file with cycle rules")
+    parser.add_argument(
+        "--add-per-cycle", type=int, help="Override add operations per cycle"
     )
     parser.add_argument(
-        "-o", "--output",
-        type=Path,
-        help="Output JSON path (default: stdout)"
+        "--compare-per-cycle", type=int, help="Override compare operations per cycle"
     )
     parser.add_argument(
-        "--cycle-config",
-        type=Path,
-        help="JSON file with cycle rules"
+        "--logic-per-cycle", type=int, help="Override logic operations per cycle"
     )
     parser.add_argument(
-        "--add-per-cycle",
-        type=int,
-        help="Override add operations per cycle"
+        "--mul-per-cycle", type=int, help="Override multiply operations per cycle"
     )
     parser.add_argument(
-        "--compare-per-cycle",
-        type=int,
-        help="Override compare operations per cycle"
+        "--copy-per-cycle", type=int, help="Override copy operations per cycle"
     )
     parser.add_argument(
-        "--logic-per-cycle",
-        type=int,
-        help="Override logic operations per cycle"
+        "--shift-per-cycle", type=int, help="Override shift operations per cycle"
     )
     parser.add_argument(
-        "--mul-per-cycle",
-        type=int,
-        help="Override multiply operations per cycle"
+        "--bitwise-per-cycle", type=int, help="Override bitwise operations per cycle"
     )
     parser.add_argument(
-        "--copy-per-cycle",
-        type=int,
-        help="Override copy operations per cycle"
+        "--const-per-cycle", type=int, help="Override const operations per cycle"
     )
     parser.add_argument(
-        "--shift-per-cycle",
-        type=int,
-        help="Override shift operations per cycle"
+        "--load-per-cycle", type=int, help="Override load operations per cycle"
     )
     parser.add_argument(
-        "--bitwise-per-cycle",
-        type=int,
-        help="Override bitwise operations per cycle"
-    )
-    parser.add_argument(
-        "--const-per-cycle",
-        type=int,
-        help="Override const operations per cycle"
-    )
-    parser.add_argument(
-        "--load-per-cycle",
-        type=int,
-        help="Override load operations per cycle"
-    )
-    parser.add_argument(
-        "--store-per-cycle",
-        type=int,
-        help="Override store operations per cycle"
+        "--store-per-cycle", type=int, help="Override store operations per cycle"
     )
 
     return parser.parse_args()
@@ -2276,7 +2322,10 @@ def main() -> None:
 
     if args.cycle_config:
         if not args.cycle_config.exists():
-            print(f"ERROR: Cycle config file '{args.cycle_config}' not found", file=sys.stderr)
+            print(
+                f"ERROR: Cycle config file '{args.cycle_config}' not found",
+                file=sys.stderr,
+            )
             sys.exit(1)
         try:
             rules = CycleRules.from_json(args.cycle_config)
@@ -2319,7 +2368,7 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        source = args.input.read_text(encoding='utf-8')
+        source = args.input.read_text(encoding="utf-8")
     except UnicodeDecodeError as e:
         print(f"ERROR: Failed to read input file: {e}", file=sys.stderr)
         sys.exit(1)
@@ -2333,28 +2382,33 @@ def main() -> None:
 
     if args.output:
         try:
-            args.output.write_text(output, encoding='utf-8')
-            print(f"✓ Analysis complete. Output written to {args.output}", file=sys.stderr)
+            args.output.write_text(output, encoding="utf-8")
+            print(
+                f"✓ Analysis complete. Output written to {args.output}", file=sys.stderr
+            )
 
             # Print summary
-            num_blocks = len(model.get('blocks', []))
-            num_ops = len(model.get('operations', []))
-            num_signals = len(model.get('signals', []))
+            num_blocks = len(model.get("blocks", []))
+            num_ops = len(model.get("operations", []))
+            num_signals = len(model.get("signals", []))
 
             print(f"✓ Analyzed {num_blocks} functions", file=sys.stderr)
             print(f"✓ Extracted {num_ops} operations", file=sys.stderr)
             print(f"✓ Tracked {num_signals} data flows", file=sys.stderr)
 
-            flow = model.get('flow', {})
-            if 'call_graph' in flow:
-                cg = flow['call_graph']
+            flow = model.get("flow", {})
+            if "call_graph" in flow:
+                cg = flow["call_graph"]
                 print(
                     f"✓ Call graph: {len(cg.get('nodes', {}))} nodes, "
                     f"depth {cg.get('max_depth', 0)}",
                     file=sys.stderr,
                 )
-                if cg.get('critical_path'):
-                    print(f"✓ Critical path: {' → '.join(cg['critical_path'])}", file=sys.stderr)
+                if cg.get("critical_path"):
+                    print(
+                        f"✓ Critical path: {' → '.join(cg['critical_path'])}",
+                        file=sys.stderr,
+                    )
 
         except IOError as e:
             print(f"ERROR: Failed to write output: {e}", file=sys.stderr)
