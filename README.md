@@ -93,6 +93,9 @@ python src/cvas_mvp.py model.c \
   --copy-per-cycle 8 \
   --shift-per-cycle 2 \
   --bitwise-per-cycle 4 \
+  --const-per-cycle 8 \
+  --load-per-cycle 4 \
+  --store-per-cycle 4 \
   -o output.json
 ```
 
@@ -106,7 +109,10 @@ python src/cvas_mvp.py model.c \
   "mul_per_cycle": 1,
   "copy_per_cycle": 8,
   "shift_per_cycle": 2,
-  "bitwise_per_cycle": 4
+  "bitwise_per_cycle": 4,
+  "const_per_cycle": 8,
+  "load_per_cycle": 4,
+  "store_per_cycle": 4
 }
 ```
 

@@ -2063,6 +2063,21 @@ New in v2.0:
         type=int,
         help="Override bitwise operations per cycle"
     )
+    parser.add_argument(
+        "--const-per-cycle",
+        type=int,
+        help="Override const operations per cycle"
+    )
+    parser.add_argument(
+        "--load-per-cycle",
+        type=int,
+        help="Override load operations per cycle"
+    )
+    parser.add_argument(
+        "--store-per-cycle",
+        type=int,
+        help="Override store operations per cycle"
+    )
 
     return parser.parse_args()
 
@@ -2099,6 +2114,12 @@ def main() -> None:
         rules.shift_per_cycle = args.shift_per_cycle
     if args.bitwise_per_cycle is not None:
         rules.bitwise_per_cycle = args.bitwise_per_cycle
+    if args.const_per_cycle is not None:
+        rules.const_per_cycle = args.const_per_cycle
+    if args.load_per_cycle is not None:
+        rules.load_per_cycle = args.load_per_cycle
+    if args.store_per_cycle is not None:
+        rules.store_per_cycle = args.store_per_cycle
 
     # Validate
     try:
