@@ -67,6 +67,9 @@ class CycleRules:
     copy_per_cycle: int = 8      # Simple assignments are very fast
     shift_per_cycle: int = 2     # Bit shifts
     bitwise_per_cycle: int = 4   # Bitwise operations
+    const_per_cycle: int = 8     # Literal assignments
+    load_per_cycle: int = 4      # Memory reads
+    store_per_cycle: int = 4     # Memory writes
 
     @classmethod
     def from_json(cls, path: Path) -> "CycleRules":
@@ -79,13 +82,17 @@ class CycleRules:
             copy_per_cycle=int(data.get("copy_per_cycle", cls.copy_per_cycle)),
             shift_per_cycle=int(data.get("shift_per_cycle", cls.shift_per_cycle)),
             bitwise_per_cycle=int(data.get("bitwise_per_cycle", cls.bitwise_per_cycle)),
+            const_per_cycle=int(data.get("const_per_cycle", cls.const_per_cycle)),
+            load_per_cycle=int(data.get("load_per_cycle", cls.load_per_cycle)),
+            store_per_cycle=int(data.get("store_per_cycle", cls.store_per_cycle)),
         )
 
     def validate(self) -> None:
         """Validate cycle rules are positive."""
         rules = [
             self.add_per_cycle, self.compare_per_cycle, self.mul_per_cycle,
-            self.copy_per_cycle, self.shift_per_cycle, self.bitwise_per_cycle
+            self.copy_per_cycle, self.shift_per_cycle, self.bitwise_per_cycle,
+            self.const_per_cycle, self.load_per_cycle, self.store_per_cycle,
         ]
         if any(r <= 0 for r in rules):
             raise ValueError("All cycle rules must be positive integers")
@@ -100,18 +107,22 @@ class OpSummary:
     copy: int = 0         # Simple assignments
     shift: int = 0        # Bit shift operations
     bitwise: int = 0      # Bitwise AND/OR/XOR
+    const: int = 0        # Literal assignments
+    load: int = 0         # Memory reads
+    store: int = 0        # Memory writes
 
     def total(self) -> int:
         """Return total operation count."""
         return (self.add + self.compare + self.multiply +
-                self.copy + self.shift + self.bitwise)
+                self.copy + self.shift + self.bitwise +
+                self.const + self.load + self.store)
 
 
 @dataclass
 class Operation:
     """Single operation node within a block."""
     op_id: str
-    op_type: str  # "add", "compare", "multiply", "copy", "shift", "bitwise"
+    op_type: str  # "add", "compare", "multiply", "copy", "shift", "bitwise", "const", "load", "store"
     inputs: List[str]
     outputs: List[str]
     parent_block_id: str
@@ -632,6 +643,8 @@ OPERAND_PATTERN = (
     r')'
 )
 OPERAND_REGEX = re.compile(rf"^{OPERAND_PATTERN}$")
+CAST_PATTERN = re.compile(r"^\(\s*[A-Za-z_]\w*(?:\s*\*+)?\s*\)\s*")
+NUMERIC_LITERAL_PATTERN = re.compile(r"^(?:0x[0-9A-Fa-f]+|\d+)$")
 
 
 def tokenize_expression(expr: str) -> List[str]:
@@ -650,6 +663,45 @@ def tokenize_expression(expr: str) -> List[str]:
 def is_operand(token: str) -> bool:
     """Check if token is an operand."""
     return bool(OPERAND_REGEX.match(token) or re.match(r"tmp_\d+|cond_\d+", token))
+
+
+def _strip_casts(token: str) -> str:
+    """Strip leading C-style casts from a token."""
+    stripped = token.strip()
+    while True:
+        match = CAST_PATTERN.match(stripped)
+        if not match:
+            break
+        stripped = stripped[match.end():].lstrip()
+    return stripped
+
+
+def classify_operand(token: str) -> str:
+    """Classify operand as literal, memory, or variable."""
+    stripped = _strip_casts(token)
+    if stripped.startswith("&"):
+        return "variable"
+
+    unary_match = re.match(r"^([+\-!~*]+)\s*(.*)$", stripped)
+    if unary_match:
+        unary_ops = unary_match.group(1)
+        base = unary_match.group(2)
+    else:
+        unary_ops = ""
+        base = stripped
+
+    if NUMERIC_LITERAL_PATTERN.fullmatch(base) and "*" not in unary_ops and "&" not in unary_ops:
+        return "literal"
+
+    if "*" in unary_ops or "[" in base or "." in base or "->" in base:
+        return "memory"
+
+    return "variable"
+
+
+def is_store_target(token: str) -> bool:
+    """Check if the assignment target should be treated as a store."""
+    return classify_operand(token) == "memory"
 
 
 def classify_operator(op: str) -> str:
@@ -768,9 +820,19 @@ def parse_expression_ops(
     elif output_target and last_output:
         op_id = f"{block_id}_op_{op_index}"
         op_index += 1
+        operand_kind = classify_operand(last_output)
+        op_type = "copy"
+        comment = "copy flow"
+        if operand_kind == "literal":
+            op_type = "const"
+            comment = "const flow"
+        elif operand_kind == "memory":
+            op_type = "load"
+            comment = "load flow"
+
         operation = Operation(
             op_id=op_id,
-            op_type="copy",
+            op_type=op_type,
             inputs=[last_output],
             outputs=[output_target],
             parent_block_id=block_id,
@@ -788,7 +850,7 @@ def parse_expression_ops(
                     destination_type="operation",
                     signal_name=last_output,
                     direction="internal",
-                    comment="copy flow",
+                    comment=comment,
                 )
             )
 
@@ -818,35 +880,106 @@ def handle_simple_assignment(
 
     # rhs must be a single operand (identifier, deref/member/index, literal)
     if is_operand(rhs.strip()):
-        op_id = f"{block_id}_op_{op_index}"
-        op_index += 1
+        rhs_kind = classify_operand(rhs)
+        if is_store_target(lhs):
+            rhs_value = rhs
+            if rhs_kind in {"literal", "memory"}:
+                op_id = f"{block_id}_op_{op_index}"
+                op_index += 1
+                op_type = "const" if rhs_kind == "literal" else "load"
+                operations.append(
+                    Operation(
+                        op_id=op_id,
+                        op_type=op_type,
+                        inputs=[rhs],
+                        outputs=[f"tmp_{op_index}"],
+                        parent_block_id=block_id,
+                    )
+                )
+                rhs_value = operations[-1].outputs[0]
 
-        operation = Operation(
-            op_id=op_id,
-            op_type="copy",
-            inputs=[rhs],
-            outputs=[lhs],
-            parent_block_id=block_id
-        )
-        operations.append(operation)
+                producer = var_producers.get(rhs)
+                if producer:
+                    source_type, source_id = producer
+                    edges.append(
+                        Signal(
+                            source_id=source_id,
+                            source_type=source_type,
+                            destination_id=op_id,
+                            destination_type="operation",
+                            signal_name=rhs,
+                            direction="internal",
+                            comment=f"{op_type} flow",
+                        )
+                    )
+                var_producers[rhs_value] = ("operation", op_id)
 
-        # Track data flow
-        producer = var_producers.get(rhs)
-        if producer:
-            source_type, source_id = producer
-            edges.append(
-                Signal(
-                    source_id=source_id,
-                    source_type=source_type,
-                    destination_id=op_id,
-                    destination_type="operation",
-                    signal_name=rhs,
-                    direction="internal",
-                    comment="copy flow"
+            store_id = f"{block_id}_op_{op_index}"
+            op_index += 1
+            operations.append(
+                Operation(
+                    op_id=store_id,
+                    op_type="store",
+                    inputs=[rhs_value],
+                    outputs=[lhs],
+                    parent_block_id=block_id,
                 )
             )
 
-        var_producers[lhs] = ("operation", op_id)
+            producer = var_producers.get(rhs_value)
+            if producer:
+                source_type, source_id = producer
+                edges.append(
+                    Signal(
+                        source_id=source_id,
+                        source_type=source_type,
+                        destination_id=store_id,
+                        destination_type="operation",
+                        signal_name=rhs_value,
+                        direction="internal",
+                        comment="store flow",
+                    )
+                )
+
+            var_producers[lhs] = ("operation", store_id)
+        else:
+            op_id = f"{block_id}_op_{op_index}"
+            op_index += 1
+            op_type = "copy"
+            comment = "copy flow"
+            if rhs_kind == "literal":
+                op_type = "const"
+                comment = "const flow"
+            elif rhs_kind == "memory":
+                op_type = "load"
+                comment = "load flow"
+
+            operation = Operation(
+                op_id=op_id,
+                op_type=op_type,
+                inputs=[rhs],
+                outputs=[lhs],
+                parent_block_id=block_id
+            )
+            operations.append(operation)
+
+            # Track data flow
+            producer = var_producers.get(rhs)
+            if producer:
+                source_type, source_id = producer
+                edges.append(
+                    Signal(
+                        source_id=source_id,
+                        source_type=source_type,
+                        destination_id=op_id,
+                        destination_type="operation",
+                        signal_name=rhs,
+                        direction="internal",
+                        comment=comment
+                    )
+                )
+
+            var_producers[lhs] = ("operation", op_id)
 
     return operations, op_index, edges
 
@@ -904,9 +1037,9 @@ def extract_operations(
             )
 
         # Assignment: var = expr
-        assignment_match = re.match(r"(?P<lhs>\w+)\s*=(?!=)\s*(?P<rhs>.+)", statement)
+        assignment_match = re.match(r"(?P<lhs>[^=]+?)\s*=(?!=)\s*(?P<rhs>.+)", statement)
         if assignment_match:
-            lhs = assignment_match.group("lhs")
+            lhs = assignment_match.group("lhs").strip()
             rhs = assignment_match.group("rhs").strip()
 
             # Check if simple assignment
@@ -918,15 +1051,52 @@ def extract_operations(
                 operations.extend(ops)
                 edges.extend(new_edges)
             else:
-                # Expression: a = b + c
-                ops, op_index, _, new_edges = parse_expression_ops(
-                    rhs, block_id, op_index, var_producers, output_target=lhs
-                )
-                operations.extend(ops)
-                edges.extend(new_edges)
+                if is_store_target(lhs):
+                    # Expression: *p = b + c
+                    ops, op_index, last_output, new_edges = parse_expression_ops(
+                        rhs, block_id, op_index, var_producers
+                    )
+                    operations.extend(ops)
+                    edges.extend(new_edges)
 
-                if ops:
-                    var_producers[lhs] = ("operation", ops[-1].op_id)
+                    if last_output:
+                        store_id = f"{block_id}_op_{op_index}"
+                        op_index += 1
+                        operations.append(
+                            Operation(
+                                op_id=store_id,
+                                op_type="store",
+                                inputs=[last_output],
+                                outputs=[lhs],
+                                parent_block_id=block_id,
+                            )
+                        )
+
+                        producer = var_producers.get(last_output)
+                        if producer:
+                            source_type, source_id = producer
+                            edges.append(
+                                Signal(
+                                    source_id=source_id,
+                                    source_type=source_type,
+                                    destination_id=store_id,
+                                    destination_type="operation",
+                                    signal_name=last_output,
+                                    direction="internal",
+                                    comment="store flow",
+                                )
+                            )
+                        var_producers[lhs] = ("operation", store_id)
+                else:
+                    # Expression: a = b + c
+                    ops, op_index, _, new_edges = parse_expression_ops(
+                        rhs, block_id, op_index, var_producers, output_target=lhs
+                    )
+                    operations.extend(ops)
+                    edges.extend(new_edges)
+
+                    if ops:
+                        var_producers[lhs] = ("operation", ops[-1].op_id)
             continue
 
         # Return statement
@@ -1011,6 +1181,12 @@ def extract_operations(
             summary.shift += 1
         elif op.op_type == "bitwise":
             summary.bitwise += 1
+        elif op.op_type == "const":
+            summary.const += 1
+        elif op.op_type == "load":
+            summary.load += 1
+        elif op.op_type == "store":
+            summary.store += 1
 
     return operations, edges, summary
 
@@ -1028,6 +1204,9 @@ def estimate_cycles(summary: OpSummary, rules: CycleRules) -> int:
     cycles += (summary.copy + rules.copy_per_cycle - 1) // rules.copy_per_cycle
     cycles += (summary.shift + rules.shift_per_cycle - 1) // rules.shift_per_cycle
     cycles += (summary.bitwise + rules.bitwise_per_cycle - 1) // rules.bitwise_per_cycle
+    cycles += (summary.const + rules.const_per_cycle - 1) // rules.const_per_cycle
+    cycles += (summary.load + rules.load_per_cycle - 1) // rules.load_per_cycle
+    cycles += (summary.store + rules.store_per_cycle - 1) // rules.store_per_cycle
     return cycles
 
 
