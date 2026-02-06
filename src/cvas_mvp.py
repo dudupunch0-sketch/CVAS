@@ -166,6 +166,8 @@ class ControlFlowGraph:
     loops: List[LoopInfo]
     has_branches: bool
     max_nesting_depth: int
+    analysis_confidence: str
+    analysis_limitations: List[str]
 
 
 # ============================================================================
@@ -1094,8 +1096,119 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
     has_if = bool(re.search(r"\bif\b", cleaned))
     has_loop = bool(re.search(r"\b(for|while|do)\b", cleaned))
 
-    # Count nesting depth (simplified)
-    max_depth = cleaned.count("{")
+    analysis_limitations: List[str] = []
+
+    def build_pairs(text: str, open_char: str, close_char: str) -> Dict[int, int]:
+        stack: List[int] = []
+        pairs: Dict[int, int] = {}
+        for idx, ch in enumerate(text):
+            if ch == open_char:
+                stack.append(idx)
+            elif ch == close_char:
+                if stack:
+                    start = stack.pop()
+                    pairs[start] = idx
+        if stack:
+            analysis_limitations.append(
+                f"unmatched '{open_char}' detected; control body ranges may be incomplete"
+            )
+        return pairs
+
+    paren_pairs = build_pairs(cleaned, "(", ")")
+    brace_pairs = build_pairs(cleaned, "{", "}")
+
+    def next_nonspace(start: int) -> Optional[int]:
+        idx = start
+        while idx < len(cleaned) and cleaned[idx].isspace():
+            idx += 1
+        return idx if idx < len(cleaned) else None
+
+    control_pattern = re.compile(r"\b(if|for|while|do)\b")
+    controls: List[Dict[str, object]] = []
+
+    for match in control_pattern.finditer(cleaned):
+        keyword = match.group(1)
+        body_start: Optional[int] = None
+        body_end: Optional[int] = None
+        has_else = False
+        else_body_start: Optional[int] = None
+        else_body_end: Optional[int] = None
+
+        if keyword in {"if", "for", "while"}:
+            paren_start = next_nonspace(match.end())
+            if paren_start is None or cleaned[paren_start] != "(":
+                analysis_limitations.append(
+                    f"missing '(' after {keyword}; control range not resolved"
+                )
+                continue
+            if paren_start not in paren_pairs:
+                analysis_limitations.append(
+                    f"unmatched parentheses in {keyword} condition; control range not resolved"
+                )
+                continue
+            paren_end = paren_pairs[paren_start]
+            body_start = next_nonspace(paren_end + 1)
+            if body_start is None or cleaned[body_start] != "{":
+                analysis_limitations.append(
+                    f"{keyword} body without braces is not expanded into CFG blocks"
+                )
+                continue
+            body_end = brace_pairs.get(body_start)
+            if body_end is None:
+                analysis_limitations.append(
+                    f"unmatched '{{' in {keyword} body; control range not resolved"
+                )
+                continue
+
+            if keyword == "if":
+                maybe_else = next_nonspace(body_end + 1)
+                if maybe_else is not None and cleaned.startswith("else", maybe_else):
+                    has_else = True
+                    after_else = next_nonspace(maybe_else + len("else"))
+                    if after_else is not None and cleaned[after_else] == "{":
+                        else_body_start = after_else
+                        else_body_end = brace_pairs.get(after_else)
+                        if else_body_end is None:
+                            analysis_limitations.append(
+                                "unmatched '{' in else body; else range not resolved"
+                            )
+                    elif after_else is not None and cleaned.startswith("if", after_else):
+                        analysis_limitations.append(
+                            "else-if chains are flattened in CFG"
+                        )
+                    else:
+                        analysis_limitations.append(
+                            "else body without braces is not expanded into CFG blocks"
+                        )
+
+        elif keyword == "do":
+            body_start = next_nonspace(match.end())
+            if body_start is None or cleaned[body_start] != "{":
+                analysis_limitations.append(
+                    "do body without braces is not expanded into CFG blocks"
+                )
+                continue
+            body_end = brace_pairs.get(body_start)
+            if body_end is None:
+                analysis_limitations.append(
+                    "unmatched '{' in do body; control range not resolved"
+                )
+                continue
+
+        if body_start is None or body_end is None:
+            continue
+
+        controls.append(
+            {
+                "keyword": keyword,
+                "start": match.start(),
+                "body_start": body_start,
+                "body_end": body_end,
+                "has_else": has_else,
+                "else_body_start": else_body_start,
+                "else_body_end": else_body_end,
+            }
+        )
 
     blocks: List[BasicBlock] = []
     loops: List[LoopInfo] = []
@@ -1133,17 +1246,8 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
     entry = make_block("entry")
     current = entry
 
-    control_pattern = re.compile(r"\b(if|else|for|while|do)\b")
-    matches = list(control_pattern.finditer(cleaned))
-
-    def has_else_between(start: int, end: int) -> bool:
-        return bool(re.search(r"\belse\b", cleaned[start:end]))
-
-    for idx, match in enumerate(matches):
-        keyword = match.group(1)
-        if keyword == "else":
-            continue
-
+    for control in sorted(controls, key=lambda item: item["start"]):
+        keyword = control["keyword"]
         if pending_ops and current == entry:
             seq_block = make_block("sequential")
             assign_pending_ops(seq_block)
@@ -1151,8 +1255,7 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
             current = seq_block
 
         if keyword == "if":
-            next_start = matches[idx + 1].start() if idx + 1 < len(matches) else len(cleaned)
-            has_else_branch = has_else_between(match.end(), next_start)
+            has_else_branch = bool(control["has_else"])
 
             cond_block = make_block("conditional_branch")
             connect(current, cond_block)
@@ -1209,6 +1312,30 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
     exit_block = make_block("exit")
     connect(current, exit_block)
 
+    nesting_events: List[Tuple[int, int]] = []
+    for control in controls:
+        body_start = control["body_start"]
+        body_end = control["body_end"]
+        if isinstance(body_start, int) and isinstance(body_end, int):
+            nesting_events.append((body_start, 1))
+            nesting_events.append((body_end, -1))
+
+    depth = 0
+    max_depth = 0
+    for _, delta in sorted(nesting_events, key=lambda item: (item[0], -item[1])):
+        if delta == 1:
+            depth += 1
+            max_depth = max(max_depth, depth)
+        else:
+            depth = max(0, depth - 1)
+
+    if not analysis_limitations:
+        analysis_confidence = "high"
+    elif len(analysis_limitations) <= 2:
+        analysis_confidence = "medium"
+    else:
+        analysis_confidence = "low"
+
     return ControlFlowGraph(
         function_name=function_name,
         basic_blocks=blocks,
@@ -1216,7 +1343,9 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
         exit_blocks=[exit_block.block_id],
         loops=loops,
         has_branches=has_if,
-        max_nesting_depth=max(1, max_depth // 2)
+        max_nesting_depth=max_depth,
+        analysis_confidence=analysis_confidence,
+        analysis_limitations=sorted(set(analysis_limitations))
     )
 
 
@@ -1583,7 +1712,9 @@ def serialize_block(block: Block) -> Dict[str, object]:
             "exit_blocks": block.cfg.exit_blocks,
             "loops": [asdict(loop) for loop in block.cfg.loops],
             "has_branches": block.cfg.has_branches,
-            "max_nesting_depth": block.cfg.max_nesting_depth
+            "max_nesting_depth": block.cfg.max_nesting_depth,
+            "analysis_confidence": block.cfg.analysis_confidence,
+            "analysis_limitations": block.cfg.analysis_limitations
         }
 
     return data
