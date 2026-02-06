@@ -18,6 +18,7 @@ Features:
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import re
 import sys
@@ -400,32 +401,186 @@ def extract_for_condition(statement: str) -> Optional[str]:
 # Function Parsing
 # ============================================================================
 
-def find_function_definitions(source: str) -> List[Tuple[str, str, str, str]]:
-    """Find all function definitions in source code."""
+def _blank_preserving_newlines(text: str) -> str:
+    """Replace non-newline chars with spaces to keep line/column indices."""
+    return re.sub(r"[^\n]", " ", text)
+
+
+def _normalize_c_source(source: str) -> str:
+    """Normalize C source for parsing while preserving line numbers."""
+    lines = []
+    for line in source.splitlines(keepends=True):
+        if line.lstrip().startswith("#"):
+            lines.append("\n")
+        else:
+            lines.append(line)
+    normalized = "".join(lines)
+
+    normalized = re.sub(
+        r"__attribute__\s*\(\((?:.|\n)*?\)\)",
+        lambda match: _blank_preserving_newlines(match.group(0)),
+        normalized,
+        flags=re.DOTALL,
+    )
+    normalized = re.sub(
+        r"__declspec\s*\([^)]*\)",
+        lambda match: _blank_preserving_newlines(match.group(0)),
+        normalized,
+        flags=re.DOTALL,
+    )
+    return normalized
+
+
+def _compute_line_starts(source: str) -> List[int]:
+    """Compute line start indices for a source string."""
+    starts = [0]
+    for idx, char in enumerate(source):
+        if char == "\n":
+            starts.append(idx + 1)
+    return starts
+
+
+def _find_function_body_from_coord(
+    cleaned_source: str, coord_line: int, coord_column: int
+) -> Optional[str]:
+    """Locate and extract a function body using line/column coordinates."""
+    if coord_line <= 0 or coord_column <= 0:
+        return None
+    line_starts = _compute_line_starts(cleaned_source)
+    if coord_line - 1 >= len(line_starts):
+        return None
+    start_index = line_starts[coord_line - 1] + coord_column - 1
+    brace_index = cleaned_source.find("{", start_index)
+    if brace_index == -1:
+        return None
+    body, _ = extract_brace_block(cleaned_source, brace_index)
+    return body
+
+
+def _find_matching_paren(source: str, close_index: int) -> Optional[int]:
+    """Find the matching opening parenthesis for a closing index."""
+    depth = 0
+    for idx in range(close_index, -1, -1):
+        if source[idx] == ")":
+            depth += 1
+        elif source[idx] == "(":
+            depth -= 1
+            if depth == 0:
+                return idx
+    return None
+
+
+def _strip_attributes_between(source: str, start: int, end: int) -> str:
+    """Return text between indices with attributes removed."""
+    segment = source[start:end]
+    segment = re.sub(r"__attribute__\s*\(\((?:.|\n)*?\)\)", " ", segment, flags=re.DOTALL)
+    segment = re.sub(r"__declspec\s*\([^)]*\)", " ", segment, flags=re.DOTALL)
+    return segment
+
+
+def _extract_name_before_paren(source: str, open_paren: int) -> Optional[Tuple[str, int]]:
+    """Extract function name and its start index before the parameter list."""
+    idx = open_paren - 1
+    while idx >= 0 and source[idx].isspace():
+        idx -= 1
+    if idx < 0:
+        return None
+    if source[idx] == ")":
+        open_idx = _find_matching_paren(source, idx)
+        if open_idx is None:
+            return None
+        name_match = re.search(r"[A-Za-z_]\w*", source[open_idx:idx])
+        if not name_match:
+            return None
+        name = name_match.group(0)
+        name_start = open_idx + name_match.start()
+        return name, name_start
+    name_match = re.search(r"[A-Za-z_]\w*$", source[: idx + 1])
+    if not name_match:
+        return None
+    name = name_match.group(0)
+    name_start = name_match.start()
+    return name, name_start
+
+
+def _find_function_definitions_regex(source: str) -> List[Tuple[str, str, str, str]]:
+    """Regex/scan-based fallback for finding function definitions."""
     functions = []
     cleaned = strip_comments_and_strings(source)
 
-    pattern = re.compile(
-        r"(?P<ret>[\w\s\*]+?)\s+(?P<name>\w+)\s*\((?P<params>[^)]*)\)\s*\{",
-        re.MULTILINE,
-    )
-
-    for match in pattern.finditer(cleaned):
-        name = match.group("name")
-
-        # Skip C keywords
+    for brace_index, char in enumerate(cleaned):
+        if char != "{":
+            continue
+        close_paren = cleaned.rfind(")", 0, brace_index)
+        if close_paren == -1:
+            continue
+        between = _strip_attributes_between(cleaned, close_paren + 1, brace_index)
+        if between.strip():
+            continue
+        open_paren = _find_matching_paren(cleaned, close_paren)
+        if open_paren is None:
+            continue
+        name_info = _extract_name_before_paren(cleaned, open_paren)
+        if not name_info:
+            continue
+        name, name_start = name_info
         if name in KEYWORDS:
             continue
-
-        start = match.end() - 1
-        body, end_index = extract_brace_block(cleaned, start)
-
+        header_start = max(
+            cleaned.rfind(";", 0, name_start),
+            cleaned.rfind("}", 0, name_start),
+            cleaned.rfind("{", 0, name_start),
+        )
+        ret = " ".join(cleaned[header_start + 1 : name_start].split())
+        params = cleaned[open_paren + 1 : close_paren].strip()
+        body, _ = extract_brace_block(cleaned, brace_index)
         if body is None:
             continue
+        functions.append((ret, name, params, body))
 
-        ret = " ".join(match.group("ret").split())
-        params = match.group("params")
+    return functions
 
+
+def _load_pycparser():
+    """Return pycparser modules if available, else None."""
+    if importlib.util.find_spec("pycparser") is None:
+        return None
+    module = importlib.import_module("pycparser")
+    return module
+
+
+def find_function_definitions(source: str) -> List[Tuple[str, str, str, str]]:
+    """Find all function definitions in source code."""
+    pycparser_module = _load_pycparser()
+    if pycparser_module is None:
+        return _find_function_definitions_regex(source)
+
+    normalized = _normalize_c_source(source)
+    cleaned = strip_comments_and_strings(normalized)
+    parser = pycparser_module.CParser()
+    generator = pycparser_module.c_generator.CGenerator()
+    functions = []
+
+    try:
+        ast = parser.parse(normalized)
+    except Exception:
+        return _find_function_definitions_regex(source)
+
+    for ext in ast.ext:
+        if not isinstance(ext, pycparser_module.c_ast.FuncDef):
+            continue
+        name = ext.decl.name
+        if name in KEYWORDS:
+            continue
+        func_type = ext.decl.type
+        ret = " ".join(generator.visit(func_type.type).split())
+        params = generator.visit(func_type.args) if func_type.args else ""
+        coord = ext.decl.coord
+        body = None
+        if coord is not None:
+            body = _find_function_body_from_coord(cleaned, coord.line, coord.column)
+        if body is None:
+            return _find_function_definitions_regex(source)
         functions.append((ret, name, params, body))
 
     return functions
@@ -455,7 +610,7 @@ def parse_params(params: str) -> List[str]:
         return []
 
     result = []
-    for param in params.split(","):
+    for param in split_top_level_commas(params):
         param = param.strip()
         if not param:
             continue
@@ -465,6 +620,23 @@ def parse_params(params: str) -> List[str]:
         result.append(name)
 
     return result
+
+
+def split_top_level_commas(text: str) -> List[str]:
+    """Split a string by commas at the top level (ignoring nested parens)."""
+    parts = []
+    depth = 0
+    start = 0
+    for idx, char in enumerate(text):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth = max(0, depth - 1)
+        elif char == "," and depth == 0:
+            parts.append(text[start:idx])
+            start = idx + 1
+    parts.append(text[start:])
+    return parts
 
 
 # ============================================================================
@@ -1024,30 +1196,85 @@ def find_function_calls(
     known_functions: Iterable[str]
 ) -> List[Tuple[str, List[str], Optional[str]]]:
     """Find function calls within known functions."""
-    cleaned = strip_comments_and_strings(body)
+    def find_calls_regex() -> List[Tuple[str, List[str], Optional[str]]]:
+        cleaned = strip_comments_and_strings(body)
+        call_pattern = re.compile(
+            r"(?P<lhs>[A-Za-z_]\w*\s*=\s*)?(?P<name>\w+)\s*\((?P<args>[^)]*)\)",
+            re.DOTALL,
+        )
+        found_calls = []
+        for match in call_pattern.finditer(cleaned):
+            name = match.group("name")
+            if name in KEYWORDS or name not in known:
+                continue
+            args = [
+                arg.strip()
+                for arg in split_top_level_commas(match.group("args"))
+                if arg.strip()
+            ]
+            lhs = match.group("lhs")
+            assigned = lhs.split("=")[0].strip() if lhs else None
+            found_calls.append((name, args, assigned))
+        return found_calls
+
+    pycparser_module = _load_pycparser()
     known = set(known_functions)
-    calls = []
+    calls: List[Tuple[str, List[str], Optional[str]]] = []
 
-    call_pattern = re.compile(
-        r"(?P<lhs>\w+\s*=\s*)?(?P<name>\w+)\s*\((?P<args>[^)]*)\)"
-    )
+    if pycparser_module is None:
+        return find_calls_regex()
 
-    for match in call_pattern.finditer(cleaned):
-        name = match.group("name")
+    normalized = _normalize_c_source(f"void __cvas_wrapper(void) {{\n{body}\n}}")
+    parser = pycparser_module.CParser()
+    generator = pycparser_module.c_generator.CGenerator()
 
-        if name in KEYWORDS:
-            continue
+    try:
+        ast = parser.parse(normalized)
+    except Exception:
+        return find_calls_regex()
 
-        if name not in known:
-            continue
-
-        args = [arg.strip() for arg in match.group("args").split(",") if arg.strip()]
-
-        lhs = match.group("lhs")
-        assigned = lhs.split("=")[0].strip() if lhs else None
-
+    def record_call(node: pycparser_module.c_ast.FuncCall, assigned: Optional[str]) -> None:
+        if isinstance(node.name, pycparser_module.c_ast.ID):
+            name = node.name.name
+        else:
+            name = generator.visit(node.name)
+        if name in KEYWORDS or name not in known:
+            return
+        args = []
+        if node.args:
+            args = [generator.visit(arg).strip() for arg in node.args.exprs]
         calls.append((name, args, assigned))
 
+    def walk(node: pycparser_module.c_ast.Node) -> None:
+        if isinstance(node, pycparser_module.c_ast.Assignment):
+            if isinstance(node.rvalue, pycparser_module.c_ast.FuncCall):
+                record_call(node.rvalue, generator.visit(node.lvalue).strip())
+                if node.rvalue.args:
+                    for arg in node.rvalue.args.exprs:
+                        walk(arg)
+            else:
+                walk(node.rvalue)
+            walk(node.lvalue)
+            return
+        if isinstance(node, pycparser_module.c_ast.Decl):
+            if isinstance(node.init, pycparser_module.c_ast.FuncCall):
+                record_call(node.init, node.name)
+                if node.init.args:
+                    for arg in node.init.args.exprs:
+                        walk(arg)
+            elif node.init:
+                walk(node.init)
+            return
+        if isinstance(node, pycparser_module.c_ast.FuncCall):
+            record_call(node, None)
+            if node.args:
+                for arg in node.args.exprs:
+                    walk(arg)
+            return
+        for _, child in node.children():
+            walk(child)
+
+    walk(ast)
     return calls
 
 
