@@ -1,0 +1,311 @@
+{
+  "blocks_summary": [
+    {
+      "block_id": "B1",
+      "block_name": "count_down",
+      "estimated_cycles": 3,
+      "ops_summary": {
+        "add": 2,
+        "bitwise": 0,
+        "compare": 1,
+        "const": 1,
+        "copy": 0,
+        "load": 0,
+        "logic": 0,
+        "multiply": 0,
+        "shift": 0,
+        "store": 0
+      }
+    }
+  ],
+  "call_graph": {
+    "analysis_confidence": "low",
+    "analysis_coverage": 0.0,
+    "analysis_limitations": [
+      "AST parse failed; regex fallback used"
+    ],
+    "call_chains": [
+      [
+        "count_down"
+      ]
+    ],
+    "critical_path": [
+      "count_down"
+    ],
+    "entry_functions": [
+      "count_down"
+    ],
+    "has_recursion": false,
+    "max_depth": 0,
+    "nodes": {
+      "count_down": {
+        "block_id": "B1",
+        "call_depth": 0,
+        "callees": [],
+        "callers": [],
+        "function_name": "count_down",
+        "is_recursive": false,
+        "self_cycles": 3,
+        "total_cycles": 3
+      }
+    }
+  },
+  "cfg": [
+    {
+      "block_name": "count_down",
+      "cfg": {
+        "analysis_confidence": "high",
+        "analysis_coverage": 1.0,
+        "analysis_limitations": [],
+        "basic_blocks": [
+          {
+            "block_id": "count_down_b1",
+            "block_type": "entry",
+            "operations": [],
+            "parent_function": "count_down",
+            "predecessors": [],
+            "successors": [
+              "count_down_b2"
+            ]
+          },
+          {
+            "block_id": "count_down_b2",
+            "block_type": "sequential",
+            "operations": [
+              "B1_op_1",
+              "B1_op_2",
+              "B1_op_3",
+              "B1_op_4"
+            ],
+            "parent_function": "count_down",
+            "predecessors": [
+              "count_down_b1"
+            ],
+            "successors": [
+              "count_down_b3"
+            ]
+          },
+          {
+            "block_id": "count_down_b3",
+            "block_type": "loop_header",
+            "operations": [],
+            "parent_function": "count_down",
+            "predecessors": [
+              "count_down_b2",
+              "count_down_b4"
+            ],
+            "successors": [
+              "count_down_b4",
+              "count_down_b5"
+            ]
+          },
+          {
+            "block_id": "count_down_b4",
+            "block_type": "loop_body",
+            "operations": [],
+            "parent_function": "count_down",
+            "predecessors": [
+              "count_down_b3"
+            ],
+            "successors": [
+              "count_down_b3"
+            ]
+          },
+          {
+            "block_id": "count_down_b5",
+            "block_type": "sequential",
+            "operations": [],
+            "parent_function": "count_down",
+            "predecessors": [
+              "count_down_b3"
+            ],
+            "successors": [
+              "count_down_b6"
+            ]
+          },
+          {
+            "block_id": "count_down_b6",
+            "block_type": "loop_header",
+            "operations": [],
+            "parent_function": "count_down",
+            "predecessors": [
+              "count_down_b5",
+              "count_down_b7"
+            ],
+            "successors": [
+              "count_down_b7",
+              "count_down_b8"
+            ]
+          },
+          {
+            "block_id": "count_down_b7",
+            "block_type": "loop_body",
+            "operations": [],
+            "parent_function": "count_down",
+            "predecessors": [
+              "count_down_b6"
+            ],
+            "successors": [
+              "count_down_b6"
+            ]
+          },
+          {
+            "block_id": "count_down_b8",
+            "block_type": "sequential",
+            "operations": [],
+            "parent_function": "count_down",
+            "predecessors": [
+              "count_down_b6"
+            ],
+            "successors": [
+              "count_down_b9"
+            ]
+          },
+          {
+            "block_id": "count_down_b9",
+            "block_type": "exit",
+            "operations": [],
+            "parent_function": "count_down",
+            "predecessors": [
+              "count_down_b8"
+            ],
+            "successors": []
+          }
+        ],
+        "entry_block": "count_down_b1",
+        "exit_blocks": [
+          "count_down_b9"
+        ],
+        "function_name": "count_down",
+        "has_branches": false,
+        "loops": [
+          {
+            "body_blocks": [
+              "count_down_b4"
+            ],
+            "estimated_iterations": "unknown",
+            "exit_blocks": [
+              "count_down_b5"
+            ],
+            "header_block": "count_down_b3",
+            "loop_id": "count_down_loop_1",
+            "nesting_level": 1
+          },
+          {
+            "body_blocks": [
+              "count_down_b7"
+            ],
+            "estimated_iterations": "unknown",
+            "exit_blocks": [
+              "count_down_b8"
+            ],
+            "header_block": "count_down_b6",
+            "loop_id": "count_down_loop_2",
+            "nesting_level": 1
+          }
+        ],
+        "max_nesting_depth": 1
+      }
+    }
+  ],
+  "operations": [
+    {
+      "inputs": [
+        "0"
+      ],
+      "op_id": "B1_op_1",
+      "op_type": "const",
+      "outputs": [
+        "sum"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "sum",
+        "n"
+      ],
+      "op_id": "B1_op_2",
+      "op_type": "add",
+      "outputs": [
+        "sum"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "n",
+        "1"
+      ],
+      "op_id": "B1_op_3",
+      "op_type": "add",
+      "outputs": [
+        "n"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "n",
+        "0"
+      ],
+      "op_id": "B1_op_4",
+      "op_type": "compare",
+      "outputs": [
+        "cond_1"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    }
+  ],
+  "signals": [
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_2",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "sum",
+      "source_id": "B1_op_1",
+      "source_type": "operation"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_2",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "n",
+      "source_id": "B1",
+      "source_type": "block"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_3",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "n",
+      "source_id": "B1",
+      "source_type": "block"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_4",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "n",
+      "source_id": "B1_op_3",
+      "source_type": "operation"
+    },
+    {
+      "comment": "direct return",
+      "destination_id": "B1",
+      "destination_type": "block",
+      "direction": "out",
+      "signal_name": "return",
+      "source_id": "B1_op_2",
+      "source_type": "operation"
+    }
+  ]
+}

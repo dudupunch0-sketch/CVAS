@@ -1,0 +1,197 @@
+{
+  "blocks_summary": [
+    {
+      "block_id": "B1",
+      "block_name": "shift_ops",
+      "estimated_cycles": 2,
+      "ops_summary": {
+        "add": 1,
+        "bitwise": 0,
+        "compare": 0,
+        "const": 0,
+        "copy": 0,
+        "load": 0,
+        "logic": 0,
+        "multiply": 0,
+        "shift": 2,
+        "store": 0
+      }
+    }
+  ],
+  "call_graph": {
+    "analysis_confidence": "low",
+    "analysis_coverage": 0.0,
+    "analysis_limitations": [
+      "AST parse failed; regex fallback used"
+    ],
+    "call_chains": [
+      [
+        "shift_ops"
+      ]
+    ],
+    "critical_path": [
+      "shift_ops"
+    ],
+    "entry_functions": [
+      "shift_ops"
+    ],
+    "has_recursion": false,
+    "max_depth": 0,
+    "nodes": {
+      "shift_ops": {
+        "block_id": "B1",
+        "call_depth": 0,
+        "callees": [],
+        "callers": [],
+        "function_name": "shift_ops",
+        "is_recursive": false,
+        "self_cycles": 2,
+        "total_cycles": 2
+      }
+    }
+  },
+  "cfg": [
+    {
+      "block_name": "shift_ops",
+      "cfg": {
+        "analysis_confidence": "high",
+        "analysis_coverage": 1.0,
+        "analysis_limitations": [],
+        "basic_blocks": [
+          {
+            "block_id": "shift_ops_b1",
+            "block_type": "entry",
+            "operations": [],
+            "parent_function": "shift_ops",
+            "predecessors": [],
+            "successors": [
+              "shift_ops_b2"
+            ]
+          },
+          {
+            "block_id": "shift_ops_b2",
+            "block_type": "sequential",
+            "operations": [
+              "B1_op_1",
+              "B1_op_2",
+              "B1_op_3"
+            ],
+            "parent_function": "shift_ops",
+            "predecessors": [
+              "shift_ops_b1"
+            ],
+            "successors": [
+              "shift_ops_b3"
+            ]
+          },
+          {
+            "block_id": "shift_ops_b3",
+            "block_type": "exit",
+            "operations": [],
+            "parent_function": "shift_ops",
+            "predecessors": [
+              "shift_ops_b2"
+            ],
+            "successors": []
+          }
+        ],
+        "entry_block": "shift_ops_b1",
+        "exit_blocks": [
+          "shift_ops_b3"
+        ],
+        "function_name": "shift_ops",
+        "has_branches": false,
+        "loops": [],
+        "max_nesting_depth": 0
+      }
+    }
+  ],
+  "operations": [
+    {
+      "inputs": [
+        "value",
+        "2"
+      ],
+      "op_id": "B1_op_1",
+      "op_type": "shift",
+      "outputs": [
+        "left"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "value",
+        "1"
+      ],
+      "op_id": "B1_op_2",
+      "op_type": "shift",
+      "outputs": [
+        "right"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "inputs": [
+        "left",
+        "right"
+      ],
+      "op_id": "B1_op_3",
+      "op_type": "add",
+      "outputs": [
+        "return"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    }
+  ],
+  "signals": [
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_1",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "value",
+      "source_id": "B1",
+      "source_type": "block"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_2",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "value",
+      "source_id": "B1",
+      "source_type": "block"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_3",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "left",
+      "source_id": "B1_op_1",
+      "source_type": "operation"
+    },
+    {
+      "comment": "operand flow",
+      "destination_id": "B1_op_3",
+      "destination_type": "operation",
+      "direction": "internal",
+      "signal_name": "right",
+      "source_id": "B1_op_2",
+      "source_type": "operation"
+    },
+    {
+      "comment": "return flow",
+      "destination_id": "B1",
+      "destination_type": "block",
+      "direction": "out",
+      "signal_name": "return",
+      "source_id": "B1_op_3",
+      "source_type": "operation"
+    }
+  ]
+}
