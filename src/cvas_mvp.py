@@ -2348,7 +2348,11 @@ def main() -> None:
             flow = model.get('flow', {})
             if 'call_graph' in flow:
                 cg = flow['call_graph']
-                print(f"✓ Call graph: {len(cg.get('nodes', {}))} nodes, depth {cg.get('max_depth', 0)}", file=sys.stderr)
+                print(
+                    f"✓ Call graph: {len(cg.get('nodes', {}))} nodes, "
+                    f"depth {cg.get('max_depth', 0)}",
+                    file=sys.stderr,
+                )
                 if cg.get('critical_path'):
                     print(f"✓ Critical path: {' → '.join(cg['critical_path'])}", file=sys.stderr)
 
