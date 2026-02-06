@@ -310,12 +310,16 @@ def split_statements(body: str) -> List[str]:
         elif char == "]":
             bracket_depth = max(bracket_depth - 1, 0)
         elif char == "{":
-            if "".join(current).strip():
-                current = []
+            statement = "".join(current).strip()
+            if statement:
+                statements.append(statement)
+            current = []
             continue
         elif char == "}":
-            if "".join(current).strip():
-                current = []
+            statement = "".join(current).strip()
+            if statement:
+                statements.append(statement)
+            current = []
             continue
 
         if char == ";" and paren_depth == 0 and bracket_depth == 0:
