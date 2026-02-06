@@ -211,7 +211,9 @@ int main() {
         "total_functions": 3,
         "ast_functions": 2,
         "regex_functions": 1,
-        "parse_failures": 0
+        "parse_failures": 0,
+        "potential_known_calls": 4,
+        "found_calls": 4
       }
     }
   },
@@ -360,7 +362,9 @@ int main() {
       "total_functions": 3,
       "ast_functions": 2,
       "regex_functions": 1,
-      "parse_failures": 0
+      "parse_failures": 0,
+      "potential_known_calls": 4,
+      "found_calls": 4
     }
   }
 }

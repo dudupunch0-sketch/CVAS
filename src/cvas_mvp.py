@@ -1130,6 +1130,9 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
 
     control_pattern = re.compile(r"\b(if|for|while|do)\b")
     total_controls = len(control_pattern.findall(cleaned))
+    unsupported_controls = sorted(
+        set(re.findall(r"\b(switch|goto)\b", cleaned))
+    )
     controls: List[Dict[str, object]] = []
 
     for match in control_pattern.finditer(cleaned):
@@ -1335,6 +1338,11 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
         else:
             depth = max(0, depth - 1)
 
+    if unsupported_controls:
+        analysis_limitations.append(
+            f"unsupported control keywords detected: {', '.join(unsupported_controls)}"
+        )
+
     if not analysis_limitations:
         analysis_confidence = "high"
     elif len(analysis_limitations) <= 2:
@@ -1348,7 +1356,11 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
         analysis_coverage = 1.0
 
     limitation_penalty = min(0.5, 0.1 * len(analysis_limitations))
-    confidence_score = max(0.0, min(1.0, analysis_coverage - limitation_penalty))
+    unsupported_penalty = min(0.4, 0.2 * len(unsupported_controls))
+    confidence_score = max(
+        0.0,
+        min(1.0, analysis_coverage - limitation_penalty - unsupported_penalty)
+    )
 
     return ControlFlowGraph(
         function_name=function_name,
@@ -1372,8 +1384,21 @@ def analyze_control_flow(body: str, function_name: str, operations: List[Operati
 def _find_function_calls_with_metadata(
     body: str,
     known_functions: Iterable[str]
-) -> Tuple[List[Tuple[str, List[str], Optional[str]]], Dict[str, bool]]:
+) -> Tuple[List[Tuple[str, List[str], Optional[str]]], Dict[str, object]]:
     """Find function calls within known functions and report parser metadata."""
+    def estimate_potential_calls(cleaned: str) -> int:
+        call_pattern = re.compile(
+            r"(?P<name>[A-Za-z_]\w*)\s*\(",
+            re.DOTALL,
+        )
+        count = 0
+        for match in call_pattern.finditer(cleaned):
+            name = match.group("name")
+            if name in KEYWORDS or name not in known:
+                continue
+            count += 1
+        return count
+
     def find_calls_regex() -> List[Tuple[str, List[str], Optional[str]]]:
         cleaned = strip_comments_and_strings(body)
         call_pattern = re.compile(
@@ -1395,14 +1420,24 @@ def _find_function_calls_with_metadata(
             found_calls.append((name, args, assigned))
         return found_calls
 
-    pycparser_module = _load_pycparser()
     known = set(known_functions)
+    cleaned = strip_comments_and_strings(body)
+    potential_known_calls = estimate_potential_calls(cleaned)
+    pycparser_module = _load_pycparser()
     calls: List[Tuple[str, List[str], Optional[str]]] = []
-    metadata = {"used_ast": False, "used_regex": False, "parse_failed": False}
+    metadata = {
+        "used_ast": False,
+        "used_regex": False,
+        "parse_failed": False,
+        "potential_known_calls": potential_known_calls,
+        "found_calls": 0,
+    }
 
     if pycparser_module is None:
         metadata["used_regex"] = True
-        return find_calls_regex(), metadata
+        calls = find_calls_regex()
+        metadata["found_calls"] = len(calls)
+        return calls, metadata
 
     normalized = _normalize_c_source(f"void __cvas_wrapper(void) {{\n{body}\n}}")
     parser = pycparser_module.CParser()
@@ -1413,7 +1448,9 @@ def _find_function_calls_with_metadata(
     except Exception:
         metadata["parse_failed"] = True
         metadata["used_regex"] = True
-        return find_calls_regex(), metadata
+        calls = find_calls_regex()
+        metadata["found_calls"] = len(calls)
+        return calls, metadata
 
     metadata["used_ast"] = True
 
@@ -1459,6 +1496,7 @@ def _find_function_calls_with_metadata(
             walk(child)
 
     walk(ast)
+    metadata["found_calls"] = len(calls)
     return calls, metadata
 
 
@@ -1505,6 +1543,8 @@ def build_call_graph(
         "ast_functions": 0,
         "regex_functions": 0,
         "parse_failures": 0,
+        "potential_known_calls": 0,
+        "found_calls": 0,
     }
 
     # Build call relationships
@@ -1516,6 +1556,12 @@ def build_call_graph(
             analysis_details["regex_functions"] += 1
         if metadata["parse_failed"]:
             analysis_details["parse_failures"] += 1
+        analysis_details["potential_known_calls"] += int(
+            metadata.get("potential_known_calls", 0)
+        )
+        analysis_details["found_calls"] += int(
+            metadata.get("found_calls", 0)
+        )
 
         for callee_name, _, _ in calls:
             if callee_name not in nodes:
@@ -1601,10 +1647,25 @@ def build_call_graph(
     has_recursion = any(node.is_recursive for node in nodes.values())
 
     total_functions = max(1, analysis_details["total_functions"])
-    analysis_coverage = analysis_details["ast_functions"] / total_functions
-    fallback_ratio = analysis_details["regex_functions"] / total_functions
-    parse_penalty = min(0.5, analysis_details["parse_failures"] / total_functions)
-    analysis_confidence = max(0.0, min(1.0, analysis_coverage + 0.3 * fallback_ratio - parse_penalty))
+    potential_calls = analysis_details["potential_known_calls"]
+    if potential_calls:
+        call_extraction_rate = analysis_details["found_calls"] / potential_calls
+    else:
+        call_extraction_rate = 1.0
+    ast_ratio = analysis_details["ast_functions"] / total_functions
+    regex_ratio = analysis_details["regex_functions"] / total_functions
+    parse_failure_ratio = analysis_details["parse_failures"] / total_functions
+    analysis_coverage = min(1.0, call_extraction_rate)
+    analysis_confidence = max(
+        0.0,
+        min(
+            1.0,
+            analysis_coverage
+            + 0.2 * ast_ratio
+            - 0.2 * parse_failure_ratio
+            - 0.1 * regex_ratio,
+        ),
+    )
 
     return CallGraph(
         nodes=nodes,
