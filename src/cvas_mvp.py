@@ -258,8 +258,8 @@ def strip_comments_and_strings(source: str) -> str:
     return re.sub(pattern, replacer, source)
 
 
-def normalize_compound_operators(body: str) -> str:
-    """Normalize compound operators to simple form.
+def normalize_compound_operators(statement: str) -> str:
+    """Normalize compound operators in a single statement to simple form.
 
     Examples:
         i++ → i = i + 1
@@ -268,29 +268,29 @@ def normalize_compound_operators(body: str) -> str:
 
     This simplification allows the main parser to handle all operations uniformly.
     """
-    cleaned = body
+    post_inc = re.match(r"^\s*(?P<var>\w+)\s*(?P<op>\+\+|--)\s*$", statement)
+    if post_inc:
+        var = post_inc.group("var")
+        op = "+" if post_inc.group("op") == "++" else "-"
+        return f"{var} = {var} {op} 1"
 
-    # Post-increment/decrement: i++ → i = i + 1
-    cleaned = re.sub(r'(\w+)\+\+', r'\1 = \1 + 1', cleaned)
-    cleaned = re.sub(r'(\w+)--', r'\1 = \1 - 1', cleaned)
+    pre_inc = re.match(r"^\s*(?P<op>\+\+|--)\s*(?P<var>\w+)\s*$", statement)
+    if pre_inc:
+        var = pre_inc.group("var")
+        op = "+" if pre_inc.group("op") == "++" else "-"
+        return f"{var} = {var} {op} 1"
 
-    # Pre-increment/decrement: ++i → i = i + 1
-    cleaned = re.sub(r'\+\+(\w+)', r'\1 = \1 + 1', cleaned)
-    cleaned = re.sub(r'--(\w+)', r'\1 = \1 - 1', cleaned)
+    compound = re.match(
+        r"^\s*(?P<lhs>\w+)\s*(?P<op>[+\-*/%&|^]|<<|>>)=\s*(?P<rhs>.+)\s*$",
+        statement,
+    )
+    if compound:
+        lhs = compound.group("lhs")
+        op = compound.group("op")
+        rhs = compound.group("rhs").strip()
+        return f"{lhs} = {lhs} {op} {rhs}"
 
-    # Compound assignment operators
-    cleaned = re.sub(r'(\w+)\s*\+=\s*(.+?);', r'\1 = \1 + \2;', cleaned)
-    cleaned = re.sub(r'(\w+)\s*-=\s*(.+?);', r'\1 = \1 - \2;', cleaned)
-    cleaned = re.sub(r'(\w+)\s*\*=\s*(.+?);', r'\1 = \1 * \2;', cleaned)
-    cleaned = re.sub(r'(\w+)\s*/=\s*(.+?);', r'\1 = \1 / \2;', cleaned)
-    cleaned = re.sub(r'(\w+)\s*%=\s*(.+?);', r'\1 = \1 % \2;', cleaned)
-    cleaned = re.sub(r'(\w+)\s*&=\s*(.+?);', r'\1 = \1 & \2;', cleaned)
-    cleaned = re.sub(r'(\w+)\s*\|=\s*(.+?);', r'\1 = \1 | \2;', cleaned)
-    cleaned = re.sub(r'(\w+)\s*\^=\s*(.+?);', r'\1 = \1 ^ \2;', cleaned)
-    cleaned = re.sub(r'(\w+)\s*<<=\s*(.+?);', r'\1 = \1 << \2;', cleaned)
-    cleaned = re.sub(r'(\w+)\s*>>=\s*(.+?);', r'\1 = \1 >> \2;', cleaned)
-
-    return cleaned
+    return statement
 
 
 def split_statements(body: str) -> List[str]:
@@ -687,11 +687,8 @@ def extract_operations(
     - Simple assignment handling
     - Bitwise and shift operation support
     """
-    # 1. Normalize compound operators
-    normalized_body = normalize_compound_operators(body)
-
-    # 2. Remove comments and strings
-    cleaned = strip_comments_and_strings(normalized_body)
+    # 1. Remove comments and strings
+    cleaned = strip_comments_and_strings(body)
 
     operations: List[Operation] = []
     edges: List[Signal] = []
@@ -706,6 +703,7 @@ def extract_operations(
     statements = split_statements(cleaned)
 
     for statement in statements:
+        statement = normalize_compound_operators(statement)
         # Normalize C-style declarations with assignment: "int y = x" -> "y = x"
         declaration_match = re.match(
             r"(?P<type>(?:unsigned|signed|short|long|int|float|double|char|bool|void|"
