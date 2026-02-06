@@ -47,6 +47,7 @@ OPERATOR_PRECEDENCE = {
     "|": 4,                        # Bitwise OR
     "&&": 3,                       # Logical AND
     "||": 2,                       # Logical OR
+    "?:": 1,                       # Ternary conditional
 }
 
 OPERATORS = set(OPERATOR_PRECEDENCE.keys())
@@ -64,6 +65,7 @@ class CycleRules:
     """Hardware cycle estimation rules - Extended for new operation types."""
     add_per_cycle: int = 4
     compare_per_cycle: int = 4
+    logic_per_cycle: int = 4
     mul_per_cycle: int = 1
     copy_per_cycle: int = 8      # Simple assignments are very fast
     shift_per_cycle: int = 2     # Bit shifts
@@ -79,6 +81,7 @@ class CycleRules:
         return cls(
             add_per_cycle=int(data.get("add_per_cycle", cls.add_per_cycle)),
             compare_per_cycle=int(data.get("compare_per_cycle", cls.compare_per_cycle)),
+            logic_per_cycle=int(data.get("logic_per_cycle", cls.logic_per_cycle)),
             mul_per_cycle=int(data.get("mul_per_cycle", cls.mul_per_cycle)),
             copy_per_cycle=int(data.get("copy_per_cycle", cls.copy_per_cycle)),
             shift_per_cycle=int(data.get("shift_per_cycle", cls.shift_per_cycle)),
@@ -91,7 +94,7 @@ class CycleRules:
     def validate(self) -> None:
         """Validate cycle rules are positive."""
         rules = [
-            self.add_per_cycle, self.compare_per_cycle, self.mul_per_cycle,
+            self.add_per_cycle, self.compare_per_cycle, self.logic_per_cycle, self.mul_per_cycle,
             self.copy_per_cycle, self.shift_per_cycle, self.bitwise_per_cycle,
             self.const_per_cycle, self.load_per_cycle, self.store_per_cycle,
         ]
@@ -104,6 +107,7 @@ class OpSummary:
     """Summary of operations by type - Extended."""
     add: int = 0
     compare: int = 0
+    logic: int = 0
     multiply: int = 0
     copy: int = 0         # Simple assignments
     shift: int = 0        # Bit shift operations
@@ -114,7 +118,7 @@ class OpSummary:
 
     def total(self) -> int:
         """Return total operation count."""
-        return (self.add + self.compare + self.multiply +
+        return (self.add + self.compare + self.logic + self.multiply +
                 self.copy + self.shift + self.bitwise +
                 self.const + self.load + self.store)
 
@@ -123,7 +127,7 @@ class OpSummary:
 class Operation:
     """Single operation node within a block."""
     op_id: str
-    op_type: str  # "add", "compare", "multiply", "copy", "shift", "bitwise", "const", "load", "store"
+    op_type: str  # "add", "compare", "logic", "multiply", "copy", "shift", "bitwise", "const", "load", "store"
     inputs: List[str]
     outputs: List[str]
     parent_block_id: str
@@ -660,6 +664,7 @@ def tokenize_expression(expr: str) -> List[str]:
         r'<<|>>|'               # Shift operators
         r'<=|>=|==|!=|'         # Comparison operators
         r'&&|\|\||'             # Logical operators
+        r'\?|:|'                # Ternary tokens
         r'[+\-*/%<>&|^]|'       # Arithmetic and bitwise
         r'\(|\)'                # Parentheses
     )
@@ -712,8 +717,10 @@ def is_store_target(token: str) -> bool:
 
 def classify_operator(op: str) -> str:
     """Classify operator into operation type."""
-    if op in {"<", ">", "<=", ">=", "==", "!=", "&&", "||"}:
+    if op in {"<", ">", "<=", ">=", "==", "!="}:
         return "compare"
+    if op in {"&&", "||", "?:"}:
+        return "logic"
     if op in {"*", "/", "%"}:
         return "multiply"
     if op in {"+", "-"}:
@@ -744,6 +751,14 @@ def parse_expression_ops(
     # Phase 1: Convert infix to postfix
     output_queue: List[str] = []
     operator_stack: List[str] = []
+    right_associative = {"?:"}
+
+    def should_pop(stack_op: str, incoming_op: str) -> bool:
+        if stack_op not in OPERATOR_PRECEDENCE:
+            return False
+        if incoming_op in right_associative:
+            return OPERATOR_PRECEDENCE[stack_op] > OPERATOR_PRECEDENCE[incoming_op]
+        return OPERATOR_PRECEDENCE[stack_op] >= OPERATOR_PRECEDENCE[incoming_op]
 
     for token in tokens:
         if is_operand(token):
@@ -752,10 +767,24 @@ def parse_expression_ops(
             while (
                 operator_stack
                 and operator_stack[-1] in OPERATORS
-                and OPERATOR_PRECEDENCE[operator_stack[-1]] >= OPERATOR_PRECEDENCE[token]
+                and should_pop(operator_stack[-1], token)
             ):
                 output_queue.append(operator_stack.pop())
             operator_stack.append(token)
+        elif token == "?":
+            operator_stack.append(token)
+        elif token == ":":
+            while operator_stack and operator_stack[-1] != "?":
+                output_queue.append(operator_stack.pop())
+            if operator_stack and operator_stack[-1] == "?":
+                operator_stack.pop()
+                while (
+                    operator_stack
+                    and operator_stack[-1] in OPERATORS
+                    and should_pop(operator_stack[-1], "?:")
+                ):
+                    output_queue.append(operator_stack.pop())
+                operator_stack.append("?:")
         elif token == "(":
             operator_stack.append(token)
         elif token == ")":
@@ -766,7 +795,7 @@ def parse_expression_ops(
 
     while operator_stack:
         op_token = operator_stack.pop()
-        if op_token != "(":
+        if op_token not in {"(", "?"}:
             output_queue.append(op_token)
 
     # Phase 2: Evaluate postfix and create operations
@@ -777,11 +806,22 @@ def parse_expression_ops(
             eval_stack.append(token)
             continue
 
-        if token not in OPERATORS or len(eval_stack) < 2:
+        if token not in OPERATORS:
             continue
 
-        right = eval_stack.pop()
-        left = eval_stack.pop()
+        if token == "?:":
+            if len(eval_stack) < 3:
+                continue
+            false_branch = eval_stack.pop()
+            true_branch = eval_stack.pop()
+            condition = eval_stack.pop()
+            inputs = [condition, true_branch, false_branch]
+        else:
+            if len(eval_stack) < 2:
+                continue
+            right = eval_stack.pop()
+            left = eval_stack.pop()
+            inputs = [left, right]
 
         op_type = classify_operator(token)
         op_id = f"{block_id}_op_{op_index}"
@@ -791,14 +831,14 @@ def parse_expression_ops(
         operation = Operation(
             op_id=op_id,
             op_type=op_type,
-            inputs=[left, right],
+            inputs=inputs,
             outputs=[output_name],
             parent_block_id=block_id,
         )
         ops.append(operation)
 
         # Track data flow
-        for input_token in (left, right):
+        for input_token in inputs:
             producer = var_producers.get(input_token)
             if producer:
                 source_type, source_id = producer
@@ -1179,6 +1219,8 @@ def extract_operations(
             summary.add += 1
         elif op.op_type == "compare":
             summary.compare += 1
+        elif op.op_type == "logic":
+            summary.logic += 1
         elif op.op_type == "multiply":
             summary.multiply += 1
         elif op.op_type == "copy":
@@ -1206,6 +1248,7 @@ def estimate_cycles(summary: OpSummary, rules: CycleRules) -> int:
     cycles = 0
     cycles += (summary.add + rules.add_per_cycle - 1) // rules.add_per_cycle
     cycles += (summary.compare + rules.compare_per_cycle - 1) // rules.compare_per_cycle
+    cycles += (summary.logic + rules.logic_per_cycle - 1) // rules.logic_per_cycle
     cycles += (summary.multiply + rules.mul_per_cycle - 1) // rules.mul_per_cycle
     cycles += (summary.copy + rules.copy_per_cycle - 1) // rules.copy_per_cycle
     cycles += (summary.shift + rules.shift_per_cycle - 1) // rules.shift_per_cycle
@@ -1989,6 +2032,11 @@ New in v2.0:
         help="Override compare operations per cycle"
     )
     parser.add_argument(
+        "--logic-per-cycle",
+        type=int,
+        help="Override logic operations per cycle"
+    )
+    parser.add_argument(
         "--mul-per-cycle",
         type=int,
         help="Override multiply operations per cycle"
@@ -2034,6 +2082,8 @@ def main() -> None:
         rules.add_per_cycle = args.add_per_cycle
     if args.compare_per_cycle is not None:
         rules.compare_per_cycle = args.compare_per_cycle
+    if args.logic_per_cycle is not None:
+        rules.logic_per_cycle = args.logic_per_cycle
     if args.mul_per_cycle is not None:
         rules.mul_per_cycle = args.mul_per_cycle
     if args.copy_per_cycle is not None:
