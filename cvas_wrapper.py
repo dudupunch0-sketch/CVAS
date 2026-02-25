@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,24 @@ def run_html(input_json: Path, output_html: Path) -> None:
         raise SystemExit(result.returncode)
 
 
+def copy_viewer_assets(output_html: Path) -> None:
+    """Copy required viewer assets next to the generated HTML."""
+    repo_root = Path(__file__).parent
+    src_elk = repo_root / "viewer" / "assets" / "elk.bundled.js"
+    if not src_elk.exists():
+        print(
+            f"[cvas_wrapper] Warning: ELK asset not found at {src_elk}",
+            file=sys.stderr,
+        )
+        return
+
+    dst_assets = output_html.parent / "assets"
+    dst_assets.mkdir(parents=True, exist_ok=True)
+    dst_elk = dst_assets / "elk.bundled.js"
+    shutil.copy2(src_elk, dst_elk)
+    print(f"[cvas_wrapper] Copied asset: {dst_elk}", file=sys.stderr)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run CVAS analysis and emit a standalone HTML viewer.")
     parser.add_argument("input_c", help="Input C source file")
@@ -39,12 +58,14 @@ def main() -> None:
         output_json = Path(args.output_json)
         run_cvas(input_c, output_json, args.cvas_args)
         run_html(output_json, output_html)
+        copy_viewer_assets(output_html)
         return
 
     with tempfile.TemporaryDirectory() as tmpdir:
         json_path = Path(tmpdir) / "analysis.json"
         run_cvas(input_c, json_path, args.cvas_args)
         run_html(json_path, output_html)
+        copy_viewer_assets(output_html)
 
 
 if __name__ == "__main__":
