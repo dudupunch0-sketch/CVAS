@@ -226,9 +226,9 @@ def build_html(data: dict) -> str:
     const data = Object.assign({{}}, raw);
     data.blocks = Array.isArray(data.blocks) ? data.blocks : [];
     data.signals = Array.isArray(data.signals) ? data.signals : [];
-    data.flow = data.flow || {{}};
+    data.flow = data.flow || {{'}}'}};
     data.flow.execution_order = Array.isArray(data.flow.execution_order) ? data.flow.execution_order : [];
-    data.flow.call_graph = data.flow.call_graph || {{}};
+    data.flow.call_graph = data.flow.call_graph || {{'}}'}};
     return data;
   }}
 
@@ -251,16 +251,16 @@ def build_html(data: dict) -> str:
       const badges = [];
       if (block.cfg && block.cfg.has_branches) badges.push("⚡ branch");
       if (block.cfg && Array.isArray(block.cfg.loops) && block.cfg.loops.length) badges.push("🔁 loop");
-      const blockId = block.block_id || \"unknown\";
-      const blockName = block.block_name || \"unnamed\";
+      const blockId = block.block_id || "unknown";
+      const blockName = block.block_name || "unnamed";
       const node = {{
         id: blockId,
         title: `${{blockName}} (${{blockId}})`,
         bodyLines: [
-          `inputs: ${inputs || "-"}`,
-          `outputs: ${outputs || "-"}`,
-          `cycles: ${cycles}`
-        ].concat(badges.length ? [`badges: ${badges.join(", ")}`] : []),
+          `inputs: ${{inputs || "-"}}`,
+          `outputs: ${{outputs || "-"}}`,
+          `cycles: ${{cycles}}`
+        ].concat(badges.length ? [`badges: ${{badges.join(", ")}}`] : []),
         data: block
       }};
       const size = computeNodeSize(node);
@@ -316,13 +316,13 @@ def build_html(data: dict) -> str:
       }});
     }}
 
-    const mergedDataEdges = mergeParallelEdges(dataEdgesRaw).map((edge, index) => ({
-      id: `data_${index}_${edge.source_id}_${edge.destination_id}`,
+    const mergedDataEdges = mergeParallelEdges(dataEdgesRaw).map((edge, index) => ({{
+      id: `data_${{index}}_${{edge.source_id}}_${{edge.destination_id}}`,
       sources: [edge.source_id],
       targets: [edge.destination_id],
-      labels: [{ text: edge.label_display }],
-      data: Object.assign({ type: "data" }, edge)
-    }));
+      labels: [{{ text: edge.label_display }}],
+      data: Object.assign({{ type: "data" }}, edge)
+    }}));
 
     const execEdges = [];
     if (toggles.showExecution && Array.isArray(data.flow.execution_order)) {{
@@ -335,7 +335,7 @@ def build_html(data: dict) -> str:
           continue;
         }}
         execEdges.push({{
-          id: `exec_${i}_${from}_${to}`,
+          id: `exec_${{i}}_${{from}}_${{to}}`,
           sources: [from],
           targets: [to],
           labels: [{{ text: "exec" }}],
@@ -347,7 +347,7 @@ def build_html(data: dict) -> str:
     const callEdges = [];
     if (toggles.showCallGraph && data.flow.call_graph && data.flow.call_graph.nodes) {{
       const nodes = data.flow.call_graph.nodes;
-      const functionToBlock = {{}};
+      const functionToBlock = {{'}}'}};
       Object.keys(nodes).forEach(name => {{
         if (nodes[name] && nodes[name].block_id) functionToBlock[name] = nodes[name].block_id;
       }});
@@ -367,7 +367,7 @@ def build_html(data: dict) -> str:
             return;
           }}
           callEdges.push({{
-            id: `call_${name}_${calleeName}`,
+            id: `call_${{name}}_${{calleeName}}`,
             sources: [callerBlock],
             targets: [calleeBlock],
             labels: [{{ text: "call" }}],
@@ -449,7 +449,7 @@ def build_html(data: dict) -> str:
     }}).join("");
 
     const nodeParts = nodes.map(node => {{
-      const data = node.data || {{}};
+      const data = node.data || {{'}}'}};
       const lines = [data.title].concat(data.bodyLines || []);
       const textLines = lines.map((line, idx) => {{
         const y = node.y + 24 + idx * 16;
@@ -460,7 +460,7 @@ def build_html(data: dict) -> str:
       return `
         <g class=\"node-group\" data-node-id=\"${{node.id}}\">
           <rect class=\"node-box ${{loopClass}}\" x=\"${{node.x}}\" y=\"${{node.y}}\" width=\"${{node.width}}\" height=\"${{node.height}}\"></rect>
-          ${textLines}
+          ${{textLines}}
         </g>`;
     }}).join("");
 
@@ -601,7 +601,7 @@ def build_html(data: dict) -> str:
   function init() {{
     const data = parseData(DATA);
     const nodes = buildNodes(data);
-    const blockMap = {{}};
+    const blockMap = {{'}}'}};
     data.blocks.forEach(block => {{
       blockMap[block.block_id] = block;
     }});
