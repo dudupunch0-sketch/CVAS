@@ -93,6 +93,8 @@ CVAS 분석부터 HTML까지 한 번에 실행하려면:
 python cvas_wrapper.py model.c output.html
 ```
 
+`cvas_wrapper.py`는 `output.html` 생성 후 필요한 ELK 자산을 같은 출력 폴더 기준 `./assets/elk.bundled.js`로 자동 복사합니다.
+
 ### Sequence 탭 (함수/호출 순서 시각화) + `function_io.json`
 
 현재 `output.html`에는 다음이 포함됩니다.
@@ -171,7 +173,7 @@ python src/cvas_mvp.py model.c --cycle-config cycle.json -o output.json
 
 - `src/cvas_mvp.py`: CVAS 핵심 파서 실행 파일
 - `src/c_ast_utils.py`: C AST 분석 유틸리티
-- `cvas_wrapper.py`: 분석부터 HTML 생성까지 실행하는 래퍼 스크립트
+- `cvas_wrapper.py`: 분석부터 HTML 생성까지 실행하는 래퍼 스크립트 (출력 폴더에 ELK 자산 자동 복사)
 - `json_to_html.py`: CVAS JSON을 단일 HTML로 변환 (Diagram/Sequence 탭, IO 상태 표시, 드래그/줌 포함)
 - `tools/generate_function_io.py`: `function_io.json` 생성기 (규칙 기반 + LLM 하이브리드)
 - `function_io.json`: Sequence 탭 의존성/병렬 레인 판단용 함수 IO 메타데이터
