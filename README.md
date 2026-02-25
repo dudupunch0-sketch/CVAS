@@ -93,6 +93,40 @@ CVAS 분석부터 HTML까지 한 번에 실행하려면:
 python cvas_wrapper.py model.c output.html
 ```
 
+### Sequence 탭 (함수/호출 순서 시각화) + `function_io.json`
+
+현재 `output.html`에는 다음이 포함됩니다.
+
+- `Diagram` 탭: 기존 block diagram (data-flow / execution-order / call-graph 토글)
+- `Sequence` 탭: 함수 블록 간 연결 + 함수 내부 call sequence 시각화
+
+`Sequence` 탭의 병렬 레인 판단 정확도를 높이려면 `function_io.json`(함수별 reads/writes 메타데이터)을 사용합니다.
+
+기본 생성(규칙 기반):
+
+```bash
+python tools/generate_function_io.py model.c --llm-provider none
+```
+
+Codex CLI 기반 하이브리드 생성:
+
+```bash
+python tools/generate_function_io.py model.c --llm-provider codex-cli
+```
+
+OpenAI-compatible API 기반 하이브리드 생성 (`responses` / `chat` 선택 가능):
+
+```bash
+python tools/generate_function_io.py model.c \
+  --llm-provider openai-compat \
+  --model <MODEL_NAME> \
+  --base-url <BASE_URL> \
+  --api-key <API_KEY> \
+  --api-mode responses
+```
+
+`json_to_html.py`는 생성 시점의 `function_io.json`을 `output.html`에 기본값(`embedded`)으로 포함하며, 런타임에 `./function_io.json`, `../function_io.json`도 자동으로 로드 시도합니다.
+
 ### Cycle Rule 설정
 
 **CLI 인자:**
@@ -138,7 +172,9 @@ python src/cvas_mvp.py model.c --cycle-config cycle.json -o output.json
 - `src/cvas_mvp.py`: CVAS 핵심 파서 실행 파일
 - `src/c_ast_utils.py`: C AST 분석 유틸리티
 - `cvas_wrapper.py`: 분석부터 HTML 생성까지 실행하는 래퍼 스크립트
-- `json_to_html.py`: CVAS JSON을 단일 HTML로 변환
+- `json_to_html.py`: CVAS JSON을 단일 HTML로 변환 (Diagram/Sequence 탭, IO 상태 표시, 드래그/줌 포함)
+- `tools/generate_function_io.py`: `function_io.json` 생성기 (규칙 기반 + LLM 하이브리드)
+- `function_io.json`: Sequence 탭 의존성/병렬 레인 판단용 함수 IO 메타데이터
 - `viewer/`: 오프라인 HTML 뷰어 및 ELK.js 번들 자산
 - `fixtures/`: 파싱 회귀 테스트용 C 코드 모음
 
@@ -665,6 +701,15 @@ Operations:
 ---
 
 ## 🔮 향후 계획 (P3)
+
+### Sequence View 개선 (진행 중)
+
+- `function_io.json` 품질 점검 및 프롬프트 튜닝 (규칙 기반 → LLM 보정 → LLM 검증)
+- `tools/generate_function_io.py` 실행 옵션 보강 (timeout/retry/logging 등)
+- **Sequence 탭에서 현재 생략된 신호(signal)들을 점검하고, 어떤 신호를 추가 표시할지 정책 논의 필요**
+  - 모든 신호를 다 표시하면 복잡도가 급증할 수 있음
+  - 핵심 제어/데이터 의존 신호만 선택 표시하는 기준이 필요
+  - 함수 블록 간 신호와 함수 내부 call-level 신호를 분리해 표시할지 결정 필요
 
 ### Memory Access Pattern Analysis (TODO)
 

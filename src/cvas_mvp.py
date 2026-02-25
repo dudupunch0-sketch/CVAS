@@ -293,6 +293,7 @@ class Flow:
     execution_order: List[str]
     parallelism: str = "unknown"
     call_graph: Optional[CallGraph] = None  # NEW: Function call graph
+    call_sequence: Optional[List[Dict[str, object]]] = None  # NEW: Ordered call sequence
 
 
 # ============================================================================
@@ -2068,6 +2069,35 @@ def build_call_graph(
     )
 
 
+def build_call_sequence(
+    functions: List[Tuple[str, str, str, str]],
+    known_functions: Iterable[str],
+) -> List[Dict[str, object]]:
+    """Build ordered call sequences per function.
+
+    Each call retains args/assigned info for dependency analysis.
+    """
+    known = set(known_functions)
+    params_by_name = {name: parse_params(params) for _, name, params, _ in functions}
+    sequences: List[Dict[str, object]] = []
+
+    for _, caller_name, _, body in functions:
+        calls, _ = find_function_calls(body, known)
+        call_items = []
+        for callee_name, args, assigned in calls:
+            call_items.append(
+                {
+                    "callee": callee_name,
+                    "args": args,
+                    "assigned": assigned,
+                    "callee_params": params_by_name.get(callee_name, []),
+                }
+            )
+
+        sequences.append({"function": caller_name, "calls": call_items})
+
+    return sequences
+
 # ============================================================================
 # Model Building - Enhanced
 # ============================================================================
@@ -2186,12 +2216,14 @@ def build_model(source: str, rules: CycleRules) -> Dict[str, object]:
 
     # P2: Build call graph
     call_graph = build_call_graph(functions, block_ids, blocks)
+    call_sequence = build_call_sequence(functions, block_ids.keys())
 
     # Enhanced flow with call graph
     flow = Flow(
         execution_order=[block.block_id for block in blocks],
         parallelism="sequential",  # Can be enhanced with dependency analysis
         call_graph=call_graph,
+        call_sequence=call_sequence,
     )
 
     return {
@@ -2246,6 +2278,9 @@ def serialize_flow(flow: Flow) -> Dict[str, object]:
             "analysis_coverage": flow.call_graph.analysis_coverage,
             "analysis_limitations": flow.call_graph.analysis_limitations,
         }
+
+    if flow.call_sequence is not None:
+        data["call_sequence"] = flow.call_sequence
 
     return data
 

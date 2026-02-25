@@ -1,0 +1,84 @@
+{
+  "clamp_int": {
+    "reads": [
+      "hi",
+      "lo",
+      "value"
+    ],
+    "writes": []
+  },
+  "abs_int": {
+    "reads": [
+      "x"
+    ],
+    "writes": []
+  },
+  "median9": {
+    "reads": [
+      "v0",
+      "v1",
+      "v2",
+      "v3",
+      "v4",
+      "v5",
+      "v6",
+      "v7",
+      "v8"
+    ],
+    "writes": []
+  },
+  "get_pixel": {
+    "reads": [
+      "height",
+      "raw",
+      "width",
+      "x",
+      "y"
+    ],
+    "writes": []
+  },
+  "is_green": {
+    "reads": [
+      "x",
+      "y"
+    ],
+    "writes": []
+  },
+  "is_red": {
+    "reads": [
+      "x",
+      "y"
+    ],
+    "writes": []
+  },
+  "is_blue": {
+    "reads": [
+      "x",
+      "y"
+    ],
+    "writes": []
+  },
+  "bpc_pixel": {
+    "reads": [
+      "height",
+      "raw",
+      "threshold",
+      "width",
+      "x",
+      "y"
+    ],
+    "writes": []
+  },
+  "bpc_grbg_3x3": {
+    "reads": [
+      "height",
+      "out",
+      "raw",
+      "threshold",
+      "width"
+    ],
+    "writes": [
+      "out"
+    ]
+  }
+}
