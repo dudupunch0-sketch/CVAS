@@ -40,6 +40,9 @@ def copy_viewer_assets(output_html: Path) -> None:
     dst_assets = output_html.parent / "assets"
     dst_assets.mkdir(parents=True, exist_ok=True)
     dst_elk = dst_assets / "elk.bundled.js"
+    if src_elk.resolve() == dst_elk.resolve():
+        print(f"[cvas_wrapper] Asset already in place: {dst_elk}", file=sys.stderr)
+        return
     shutil.copy2(src_elk, dst_elk)
     print(f"[cvas_wrapper] Copied asset: {dst_elk}", file=sys.stderr)
 
