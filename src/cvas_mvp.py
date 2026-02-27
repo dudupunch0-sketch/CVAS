@@ -23,7 +23,7 @@ import re
 import sys
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from c_ast_utils import parse_statement, parse_translation_unit
 
@@ -71,6 +71,44 @@ KEYWORDS = {
     "else",
     "break",
     "continue",
+}
+
+TYPE_AND_C_KEYWORDS = {
+    "auto",
+    "bool",
+    "break",
+    "case",
+    "char",
+    "const",
+    "continue",
+    "default",
+    "do",
+    "double",
+    "else",
+    "enum",
+    "extern",
+    "float",
+    "for",
+    "goto",
+    "if",
+    "inline",
+    "int",
+    "long",
+    "register",
+    "restrict",
+    "return",
+    "short",
+    "signed",
+    "sizeof",
+    "static",
+    "struct",
+    "switch",
+    "typedef",
+    "union",
+    "unsigned",
+    "void",
+    "volatile",
+    "while",
 }
 
 
@@ -294,6 +332,9 @@ class Flow:
     parallelism: str = "unknown"
     call_graph: Optional[CallGraph] = None  # NEW: Function call graph
     call_sequence: Optional[List[Dict[str, object]]] = None  # NEW: Ordered call sequence
+    function_defs: Optional[Dict[str, Dict[str, object]]] = None
+    unresolved_calls: Optional[List[Dict[str, object]]] = None
+    external_symbols: Optional[List[Dict[str, object]]] = None
 
 
 # ============================================================================
@@ -314,6 +355,199 @@ def extract_cvas_region(source: str) -> Tuple[str, bool]:
         return "", False
 
     return source[start_index + len(MARKER_START) : end_index], True
+
+
+def collect_project_sources(
+    project_root: Path, extensions: Iterable[str], entry_file: Path
+) -> List[Tuple[Path, str]]:
+    """Collect source files under project root with deterministic ordering."""
+    ext_set = {f".{ext.strip().lstrip('.').lower()}" for ext in extensions if ext.strip()}
+    files: List[Path] = []
+    for path in project_root.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() in ext_set:
+            files.append(path)
+
+    files = sorted(set(files))
+    if entry_file in files:
+        files.remove(entry_file)
+    ordered = [entry_file] + files
+
+    sources: List[Tuple[Path, str]] = []
+    for path in ordered:
+        try:
+            sources.append((path, path.read_text(encoding="utf-8")))
+        except (OSError, UnicodeDecodeError):
+            print(f"WARNING: Failed to read source file: {path}", file=sys.stderr)
+    return sources
+
+
+def build_project_symbol_index(
+    project_sources: List[Tuple[Path, str]],
+) -> Tuple[
+    Dict[str, Tuple[str, str, str, str, str]],
+    List[Dict[str, object]],
+    Dict[str, Dict[str, object]],
+]:
+    """Build function/global/macro index across project files."""
+    function_defs: Dict[str, Tuple[str, str, str, str, str]] = {}
+    duplicate_functions: List[Dict[str, object]] = []
+    symbol_index: Dict[str, Dict[str, object]] = {}
+
+    for path, source in project_sources:
+        rel_path = str(path)
+        functions = find_function_definitions(source)
+        for ret, name, params, body in functions:
+            if name in function_defs:
+                duplicate_functions.append(
+                    {
+                        "name": name,
+                        "existing_file": function_defs[name][4],
+                        "duplicate_file": rel_path,
+                    }
+                )
+                continue
+            function_defs[name] = (ret, name, params, body, rel_path)
+
+        for macro_name, macro_value, line in scan_macros(source):
+            symbol_index.setdefault(
+                macro_name,
+                {
+                    "name": macro_name,
+                    "kind": "macro",
+                    "file": rel_path,
+                    "line": line,
+                    "value": macro_value,
+                },
+            )
+
+        for global_name, line in scan_global_symbols(source):
+            symbol_index.setdefault(
+                global_name,
+                {
+                    "name": global_name,
+                    "kind": "global",
+                    "file": rel_path,
+                    "line": line,
+                },
+            )
+
+    return function_defs, duplicate_functions, symbol_index
+
+
+def scan_macros(source: str) -> List[Tuple[str, str, int]]:
+    """Scan simple #define macros."""
+    results: List[Tuple[str, str, int]] = []
+    define_pattern = re.compile(r"^\s*#define\s+([A-Za-z_]\w*)\b(.*)$")
+    for idx, line in enumerate(source.splitlines(), start=1):
+        match = define_pattern.match(line)
+        if not match:
+            continue
+        results.append((match.group(1), match.group(2).strip(), idx))
+    return results
+
+
+def scan_global_symbols(source: str) -> List[Tuple[str, int]]:
+    """Scan probable top-level global symbols from declarations."""
+    results: List[Tuple[str, int]] = []
+    cleaned = strip_comments_and_strings(source)
+    lines = cleaned.splitlines()
+    depth = 0
+    decl_buffer = ""
+    decl_start = 1
+
+    for idx, line in enumerate(lines, start=1):
+        for char in line:
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth = max(depth - 1, 0)
+
+        if depth != 0:
+            continue
+        if line.lstrip().startswith("#"):
+            continue
+
+        segment = line.strip()
+        if not segment:
+            continue
+        if not decl_buffer:
+            decl_start = idx
+        decl_buffer = f"{decl_buffer} {segment}".strip()
+        if ";" not in segment:
+            continue
+
+        stmt = decl_buffer.split(";", 1)[0]
+        decl_buffer = ""
+        if "(" in stmt:
+            continue
+        names = extract_decl_names(stmt)
+        for name in names:
+            results.append((name, decl_start))
+
+    return results
+
+
+def extract_decl_names(statement: str) -> List[str]:
+    """Extract probable declared variable names from a declaration statement."""
+    if not statement:
+        return []
+
+    type_prefix = re.compile(
+        r"^\s*(?:static\s+|extern\s+|const\s+|volatile\s+|register\s+|unsigned\s+|signed\s+|long\s+|short\s+)*"
+        r"(?:void|char|int|float|double|bool|size_t|ssize_t|u?int\d+_t|struct\s+\w+|enum\s+\w+)\b"
+    )
+    match = type_prefix.match(statement)
+    if not match:
+        return []
+
+    tail = statement[match.end() :].strip()
+    if not tail:
+        return []
+
+    names: List[str] = []
+    for part in split_top_level_commas(tail):
+        candidate = part.split("=", 1)[0].strip()
+        candidate = re.sub(r"\[[^\]]*\]", "", candidate)
+        candidate = candidate.replace("*", " ").strip()
+        if not candidate:
+            continue
+        token = candidate.split()[-1]
+        if re.match(r"^[A-Za-z_]\w*$", token):
+            names.append(token)
+    return names
+
+
+def extract_identifier_tokens(body: str) -> List[str]:
+    """Extract identifier-like tokens from function body."""
+    cleaned = strip_comments_and_strings(body)
+    return re.findall(r"\b[A-Za-z_]\w*\b", cleaned)
+
+
+def infer_local_variables(body: str, params: List[str]) -> Set[str]:
+    """Infer probable local variables from declarations in function body."""
+    locals_set: Set[str] = set(params)
+    for statement in split_statements(body):
+        for name in extract_decl_names(statement):
+            locals_set.add(name)
+    return locals_set
+
+
+def find_unknown_calls(body: str, known_functions: Set[str]) -> List[str]:
+    """Find probable function calls not present in known function index."""
+    cleaned = strip_comments_and_strings(body)
+    pattern = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
+    unknown: List[str] = []
+    for match in pattern.finditer(cleaned):
+        name = match.group(1)
+        if name in KEYWORDS or name in TYPE_AND_C_KEYWORDS:
+            continue
+        if name in known_functions:
+            continue
+        if name not in unknown:
+            unknown.append(name)
+    return unknown
 
 
 def strip_comments_and_strings(source: str) -> str:
@@ -1921,7 +2155,7 @@ def find_function_calls(
 
 
 def build_call_graph(
-    functions: List[Tuple[str, str, str, str]],
+    functions: List[Tuple[str, str, str, str, str]],
     block_ids: Dict[str, str],
     blocks: List[Block],
 ) -> CallGraph:
@@ -1936,7 +2170,7 @@ def build_call_graph(
     nodes: Dict[str, CallGraphNode] = {}
 
     # Initialize nodes
-    for _, name, _, _ in functions:
+    for _, name, _, _, _ in functions:
         block = next((b for b in blocks if b.block_name == name), None)
         nodes[name] = CallGraphNode(
             function_name=name,
@@ -1954,7 +2188,7 @@ def build_call_graph(
     analysis_limitations: List[str] = []
 
     # Build call relationships
-    for _, caller_name, _, body in functions:
+    for _, caller_name, _, body, _ in functions:
         calls, metadata = find_function_calls(body, block_ids.keys())
         if metadata["parser"] == "ast":
             ast_analyses += 1
@@ -2070,7 +2304,7 @@ def build_call_graph(
 
 
 def build_call_sequence(
-    functions: List[Tuple[str, str, str, str]],
+    functions: List[Tuple[str, str, str, str, str]],
     known_functions: Iterable[str],
 ) -> List[Dict[str, object]]:
     """Build ordered call sequences per function.
@@ -2078,10 +2312,12 @@ def build_call_sequence(
     Each call retains args/assigned info for dependency analysis.
     """
     known = set(known_functions)
-    params_by_name = {name: parse_params(params) for _, name, params, _ in functions}
+    params_by_name = {
+        name: parse_params(params) for _, name, params, _, _ in functions
+    }
     sequences: List[Dict[str, object]] = []
 
-    for _, caller_name, _, body in functions:
+    for _, caller_name, _, body, _ in functions:
         calls, _ = find_function_calls(body, known)
         call_items = []
         for callee_name, args, assigned in calls:
@@ -2103,7 +2339,12 @@ def build_call_sequence(
 # ============================================================================
 
 
-def build_model(source: str, rules: CycleRules) -> Dict[str, object]:
+def build_model(
+    source: str,
+    rules: CycleRules,
+    project_sources: Optional[List[Tuple[Path, str]]] = None,
+    entry_file: Optional[Path] = None,
+) -> Dict[str, object]:
     """Build complete enhanced model with P1+P2 features."""
 
     source = expand_simple_function_macros(source)
@@ -2122,8 +2363,8 @@ def build_model(source: str, rules: CycleRules) -> Dict[str, object]:
             "note": f"{MARKER_START}/{MARKER_END} region not found or empty",
         }
 
-    functions = find_function_definitions(region)
-    if not functions:
+    region_functions = find_function_definitions(region)
+    if not region_functions:
         print("WARNING: No functions found in CVAS region", file=sys.stderr)
         return {
             "blocks": [],
@@ -2134,14 +2375,57 @@ def build_model(source: str, rules: CycleRules) -> Dict[str, object]:
             "note": "No functions found in CVAS region",
         }
 
-    block_ids = {name: f"B{idx + 1}" for idx, (_, name, _, _) in enumerate(functions)}
+    entry_file_str = str(entry_file) if entry_file else "input"
+
+    if project_sources:
+        function_defs, duplicate_functions, symbol_index = build_project_symbol_index(
+            project_sources
+        )
+    else:
+        function_defs = {
+            name: (ret, name, params, body, entry_file_str)
+            for ret, name, params, body in region_functions
+        }
+        duplicate_functions = []
+        symbol_index = {}
+
+    # Always prioritize the explicit CVAS region definitions from entry file.
+    for ret, name, params, body in region_functions:
+        function_defs[name] = (ret, name, params, body, entry_file_str)
+
+    known_functions = set(function_defs.keys())
+    seed_order = [name for _, name, _, _ in region_functions]
+
+    analyzed_names: List[str] = []
+    visited: Set[str] = set()
+    queue: List[str] = list(seed_order)
+    while queue:
+        current = queue.pop(0)
+        if current in visited:
+            continue
+        func = function_defs.get(current)
+        if func is None:
+            continue
+        visited.add(current)
+        analyzed_names.append(current)
+        _, _, _, body, _ = func
+        calls, _ = find_function_calls(body, known_functions)
+        for callee_name, _, _ in calls:
+            if callee_name not in visited:
+                queue.append(callee_name)
+
+    functions = [function_defs[name] for name in analyzed_names]
+    block_ids = {name: f"B{idx + 1}" for idx, name in enumerate(analyzed_names)}
 
     blocks: List[Block] = []
     operations: List[Operation] = []
     signals: List[Signal] = []
+    unresolved_calls: List[Dict[str, object]] = []
+    external_symbols: List[Dict[str, object]] = []
+    function_def_meta: Dict[str, Dict[str, object]] = {}
 
     # Process each function
-    for ret_type, name, params, body in functions:
+    for ret_type, name, params, body, source_file in functions:
         inputs = parse_params(params)
         outputs = []
         if ret_type and ret_type.strip() != "void":
@@ -2180,12 +2464,60 @@ def build_model(source: str, rules: CycleRules) -> Dict[str, object]:
             )
         )
 
+        function_def_meta[name] = {"file": source_file}
+
+        local_vars = infer_local_variables(body, inputs)
+        identifiers = extract_identifier_tokens(body)
+        seen_refs: Set[str] = set()
+        for ident in identifiers:
+            if ident in KEYWORDS or ident in TYPE_AND_C_KEYWORDS:
+                continue
+            if ident in known_functions:
+                continue
+            if ident in local_vars:
+                continue
+            if ident in seen_refs:
+                continue
+            seen_refs.add(ident)
+            symbol = symbol_index.get(ident)
+            if symbol:
+                external_symbols.append(
+                    {
+                        "function": name,
+                        "name": ident,
+                        "kind": symbol.get("kind", "external"),
+                        "resolved": True,
+                        "defined_in": symbol.get("file"),
+                        "line": symbol.get("line"),
+                    }
+                )
+            else:
+                external_symbols.append(
+                    {
+                        "function": name,
+                        "name": ident,
+                        "kind": "external",
+                        "resolved": False,
+                    }
+                )
+
+        for unknown_call in find_unknown_calls(body, known_functions):
+            unresolved_calls.append(
+                {
+                    "caller": name,
+                    "callee": unknown_call,
+                    "source_file": source_file,
+                }
+            )
+
     # Analyze function calls for inter-block signals
-    for _, caller_name, _, body in functions:
+    for _, caller_name, _, body, _ in functions:
         caller_id = block_ids[caller_name]
-        calls, _ = find_function_calls(body, block_ids.keys())
+        calls, _ = find_function_calls(body, known_functions)
 
         for callee_name, args, assigned in calls:
+            if callee_name not in block_ids:
+                continue
             callee_id = block_ids[callee_name]
 
             for arg in args:
@@ -2216,7 +2548,7 @@ def build_model(source: str, rules: CycleRules) -> Dict[str, object]:
 
     # P2: Build call graph
     call_graph = build_call_graph(functions, block_ids, blocks)
-    call_sequence = build_call_sequence(functions, block_ids.keys())
+    call_sequence = build_call_sequence(functions, known_functions)
 
     # Enhanced flow with call graph
     flow = Flow(
@@ -2224,7 +2556,16 @@ def build_model(source: str, rules: CycleRules) -> Dict[str, object]:
         parallelism="sequential",  # Can be enhanced with dependency analysis
         call_graph=call_graph,
         call_sequence=call_sequence,
+        function_defs=function_def_meta,
+        unresolved_calls=unresolved_calls,
+        external_symbols=external_symbols,
     )
+
+    analysis_note = "Enhanced with P1+P2: complete data flow, CFG, call graph"
+    if duplicate_functions:
+        analysis_note += (
+            f"; duplicate function definitions detected: {len(duplicate_functions)}"
+        )
 
     return {
         "blocks": [serialize_block(block) for block in blocks],
@@ -2232,8 +2573,10 @@ def build_model(source: str, rules: CycleRules) -> Dict[str, object]:
         "signals": [asdict(signal) for signal in signals],
         "flow": serialize_flow(flow),
         "diagram_hint": {"layout": "TBD by drawing tool"},
-        "note": "Enhanced with P1+P2: complete data flow, CFG, call graph",
+        "note": analysis_note,
         "analysis_version": "2.0",
+        "project_mode": bool(project_sources),
+        "duplicate_functions": duplicate_functions,
     }
 
 
@@ -2282,6 +2625,15 @@ def serialize_flow(flow: Flow) -> Dict[str, object]:
     if flow.call_sequence is not None:
         data["call_sequence"] = flow.call_sequence
 
+    if flow.function_defs is not None:
+        data["function_defs"] = flow.function_defs
+
+    if flow.unresolved_calls is not None:
+        data["unresolved_calls"] = flow.unresolved_calls
+
+    if flow.external_symbols is not None:
+        data["external_symbols"] = flow.external_symbols
+
     return data
 
 
@@ -2309,7 +2661,7 @@ New in v2.0:
         """,
     )
 
-    parser.add_argument("input", type=Path, help="Path to C source file")
+    parser.add_argument("input", type=Path, help="Path to entry C/C++ source file")
     parser.add_argument(
         "-o", "--output", type=Path, help="Output JSON path (default: stdout)"
     )
@@ -2343,6 +2695,21 @@ New in v2.0:
     )
     parser.add_argument(
         "--store-per-cycle", type=int, help="Override store operations per cycle"
+    )
+    parser.add_argument(
+        "--project-root",
+        type=Path,
+        help="Project root for multi-file indexing/resolution",
+    )
+    parser.add_argument(
+        "--entry-file",
+        type=Path,
+        help="Entry file inside project root (default: positional input)",
+    )
+    parser.add_argument(
+        "--source-extensions",
+        default="c,cc,cpp,h,hpp",
+        help="Comma-separated extensions to index in project mode",
     )
 
     return parser.parse_args()
@@ -2397,20 +2764,49 @@ def main() -> None:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
+    entry_file = args.entry_file if args.entry_file else args.input
+
     # Read input
-    if not args.input.exists():
-        print(f"ERROR: Input file '{args.input}' not found", file=sys.stderr)
+    if not entry_file.exists():
+        print(f"ERROR: Input file '{entry_file}' not found", file=sys.stderr)
         sys.exit(1)
 
     try:
-        source = args.input.read_text(encoding="utf-8")
+        source = entry_file.read_text(encoding="utf-8")
     except UnicodeDecodeError as e:
         print(f"ERROR: Failed to read input file: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Build model
-    print("Building enhanced model with P1+P2 analysis...", file=sys.stderr)
-    model = build_model(source, rules)
+    project_sources: Optional[List[Tuple[Path, str]]] = None
+    if args.project_root:
+        if not args.project_root.exists() or not args.project_root.is_dir():
+            print(
+                f"ERROR: Project root '{args.project_root}' not found or not a directory",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        resolved_entry = entry_file.resolve()
+        resolved_root = args.project_root.resolve()
+        if not str(resolved_entry).startswith(str(resolved_root)):
+            print(
+                "ERROR: Entry file must be under --project-root in project mode",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        extensions = [ext.strip() for ext in args.source_extensions.split(",")]
+        project_sources = collect_project_sources(
+            resolved_root, extensions, resolved_entry
+        )
+        print(
+            f"Building enhanced model with project indexing ({len(project_sources)} files)...",
+            file=sys.stderr,
+        )
+    else:
+        print("Building enhanced model with P1+P2 analysis...", file=sys.stderr)
+
+    model = build_model(
+        source, rules, project_sources=project_sources, entry_file=entry_file
+    )
 
     # Output JSON
     output = json.dumps(model, indent=2, ensure_ascii=False)

@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import datetime
 from glob import glob
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -193,6 +194,19 @@ def run_llm(provider: str, prompt: str, model: str, base_url: str | None, api_ke
     return extract_json_from_text(output)
 
 
+def _timestamp() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def log(msg: str, log_file: Path | None = None) -> None:
+    line = f"[function-io] {_timestamp()} {msg}"
+    print(line, file=sys.stderr)
+    if log_file:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        with log_file.open("a", encoding="utf-8") as fp:
+            fp.write(line + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate function_io.json with hybrid rule+LLM pipeline")
     parser.add_argument("input", type=Path, help="C source file")
@@ -205,15 +219,31 @@ def main() -> None:
     parser.add_argument("--base-url", help="OpenAI-compatible base URL")
     parser.add_argument("--api-key", help="API key for OpenAI-compatible providers")
     parser.add_argument("--api-mode", choices=["responses", "chat"], default="responses")
+    parser.add_argument("--log-file", type=Path, help="Optional path to append detailed execution logs")
 
     args = parser.parse_args()
+
+    if args.log_file:
+        args.log_file.parent.mkdir(parents=True, exist_ok=True)
+        args.log_file.write_text("", encoding="utf-8")
+
+    log(f"Start: input={args.input}", args.log_file)
+    log(
+        "Config: "
+        f"provider={args.llm_provider}, model={args.model or '(default)'}, "
+        f"api_mode={args.api_mode}, base_url={args.base_url or 'https://api.openai.com'}",
+        args.log_file,
+    )
 
     source = args.input.read_text(encoding="utf-8")
     rule_map = build_rule_map(source)
     args.out_rule.write_text(json.dumps(rule_map, indent=2), encoding="utf-8")
+    log(f"Rule stage complete: functions={len(rule_map)} -> {args.out_rule}", args.log_file)
 
     if args.llm_provider == "none":
         args.out.write_text(json.dumps(rule_map, indent=2), encoding="utf-8")
+        log("LLM stage skipped (provider=none)", args.log_file)
+        log(f"Done: wrote final output {args.out}", args.log_file)
         print(f"Wrote {args.out}")
         return
 
@@ -224,6 +254,14 @@ def main() -> None:
         args.model = "codex-default"
 
     api_key = args.api_key or os.getenv("OPENAI_API_KEY")
+    if args.llm_provider == "openai-compat":
+        log(
+            "OpenAI-compatible auth: "
+            + ("api_key=provided" if api_key else "api_key=missing"),
+            args.log_file,
+        )
+    else:
+        log("Codex CLI mode: using local codex configuration", args.log_file)
 
     prompt_refine = (
         "You are given C source code and a draft function IO map. "
@@ -233,8 +271,16 @@ def main() -> None:
         "Draft IO JSON:\n" + json.dumps(rule_map, indent=2) + "\n"
     )
 
-    v1_map = run_llm(args.llm_provider, prompt_refine, args.model, args.base_url, api_key, args.api_mode)
+    log("LLM refine stage: request start", args.log_file)
+    try:
+        v1_map = run_llm(
+            args.llm_provider, prompt_refine, args.model, args.base_url, api_key, args.api_mode
+        )
+    except Exception as exc:
+        log(f"LLM refine stage: failed ({exc})", args.log_file)
+        raise
     args.out_v1.write_text(json.dumps(v1_map, indent=2), encoding="utf-8")
+    log(f"LLM refine stage: success -> {args.out_v1}", args.log_file)
 
     prompt_verify = (
         "Given C code and an IO map, verify and correct any mistakes. "
@@ -244,10 +290,19 @@ def main() -> None:
         "IO JSON:\n" + json.dumps(v1_map, indent=2) + "\n"
     )
 
-    v2_map = run_llm(args.llm_provider, prompt_verify, args.model, args.base_url, api_key, args.api_mode)
+    log("LLM verify stage: request start", args.log_file)
+    try:
+        v2_map = run_llm(
+            args.llm_provider, prompt_verify, args.model, args.base_url, api_key, args.api_mode
+        )
+    except Exception as exc:
+        log(f"LLM verify stage: failed ({exc})", args.log_file)
+        raise
     args.out_v2.write_text(json.dumps(v2_map, indent=2), encoding="utf-8")
+    log(f"LLM verify stage: success -> {args.out_v2}", args.log_file)
 
     args.out.write_text(json.dumps(v2_map, indent=2), encoding="utf-8")
+    log(f"Done: wrote final output {args.out}", args.log_file)
     print(f"Wrote {args.out}")
 
 
