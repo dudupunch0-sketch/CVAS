@@ -9,12 +9,12 @@ The CVAS project is a static analysis tool designed for C code. Its primary func
 
 The project follows a three-stage pipeline:
 
-1.  **Analysis (`src/cvas_mvp.py`):**
-    -   This is the core analysis script.
+1.  **Analysis (`src/cvas_pipeline.py`, invoked by `src/cvas_cli.py` and wrapped by `src/cvas_mvp.py`):**
+    -   This is the core orchestration and model assembly layer.
     -   It uses a hybrid parsing strategy:
         -   It primarily leverages `pycparser` (via `src/c_ast_utils.py`) for formal Abstract Syntax Tree (AST) generation.
         -   It includes robust regex-based fallbacks for resilience.
-    -   It employs a Shunting-yard algorithm to handle C expression precedence correctly.
+    -   It delegates function-level lowering and preprocessing to `src/cvas_passes.py`.
     -   It builds a detailed model of the code's data flow, control flow graph (CFG), and function call graph.
 
 2.  **Visualization (`json_to_html.py`):**
@@ -24,11 +24,14 @@ The project follows a three-stage pipeline:
 
 3.  **Wrapper (`cvas_wrapper.py`):**
     -   A simple wrapper script that automates the end-to-end process.
-    -   It sequentially runs the analysis (`cvas_mvp.py`) and then the visualization (`json_to_html.py`) scripts.
+    -   It sequentially runs the analysis (`cvas_cli.py`) and then the visualization (`json_to_html.py`) scripts.
 
 ## Key Files and Their Roles
 
--   **`src/cvas_mvp.py`**: The main application file, orchestrating the analysis pipeline, C code parsing, and JSON output generation. Contains core logic for data flow, control flow, and call graph construction.
+-   **`src/cvas_mvp.py`**: Compatibility CLI wrapper for the analysis pipeline.
+-   **`src/cvas_cli.py`**: CLI front-end that handles argument parsing, source loading, and JSON output writing.
+-   **`src/cvas_pipeline.py`**: The main orchestration file, coordinating project discovery, analysis passes, and model assembly.
+-   **`src/cvas_passes.py`**: Function-level preprocessing, lowering, and per-function analysis outputs.
 -   **`src/c_ast_utils.py`**: A helper module that provides an interface to `pycparser` for AST-based parsing, acting as a robust and optional component for the main analysis.
 -   **`json_to_html.py`**: Handles the transformation of structured JSON data into an interactive HTML/SVG graph, making the code structure visually comprehensible.
 -   **`cvas_wrapper.py`**: A convenience script that streamlines the execution of the analysis and visualization steps for users.

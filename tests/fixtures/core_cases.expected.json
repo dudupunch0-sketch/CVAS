@@ -36,11 +36,9 @@
     }
   ],
   "call_graph": {
-    "analysis_confidence": "low",
-    "analysis_coverage": 0.0,
-    "analysis_limitations": [
-      "AST parse failed; regex fallback used"
-    ],
+    "analysis_confidence": "high",
+    "analysis_coverage": 1.0,
+    "analysis_limitations": [],
     "call_chains": [
       [
         "analyze",
@@ -1105,8 +1103,17 @@
       "destination_id": "B1",
       "destination_type": "block",
       "direction": "in",
-      "signal_name": "(sum",
+      "signal_name": "sum",
       "source_id": "B2",
+      "source_type": "block"
+    },
+    {
+      "comment": "return flow",
+      "destination_id": "B2",
+      "destination_type": "block",
+      "direction": "out",
+      "signal_name": "sum",
+      "source_id": "B1",
       "source_type": "block"
     }
   ]

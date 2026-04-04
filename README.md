@@ -72,6 +72,12 @@ ISP 알고리즘 C-model 분석을 위한 고급 파서로, `CVAS_START` / `CVAS
 ### 기본 사용법
 
 ```bash
+python src/cvas_cli.py model.c -o output.json
+```
+
+`src/cvas_cli.py`가 직접 CLI entrypoint이고, `src/cvas_mvp.py`는 기존 사용자를 위한 호환 wrapper입니다.
+
+```bash
 python src/cvas_mvp.py model.c -o output.json
 ```
 
@@ -95,11 +101,19 @@ python cvas_wrapper.py model.c output.html
 
 `cvas_wrapper.py`는 `output.html` 생성 후 필요한 ELK 자산을 같은 출력 폴더 기준 `./assets/elk.bundled.js`로 자동 복사합니다.
 
+문서/데모 용 최신 샘플 출력은 다음처럼 갱신할 수 있습니다.
+
+```bash
+python cvas_wrapper.py test_examples.c docs/test_examples_output.html --output-json docs/test_examples_output.json
+```
+
+프로젝트 소개용 정적 개요 문서는 `docs/cvas_project_overview.html`에 있습니다.
+
 ### Sequence 탭 (함수/호출 순서 시각화) + `function_io.json`
 
 현재 `output.html`에는 다음이 포함됩니다.
 
-- `Diagram` 탭: 기존 block diagram (data-flow / execution-order / call-graph 토글)
+- `Diagram` 탭: operation-flow 중심 block diagram (data-flow / execution-order / call-graph 토글)
 - `Sequence` 탭: 함수 블록 간 연결 + 함수 내부 call sequence 시각화
 
 `Sequence` 탭의 병렬 레인 판단 정확도를 높이려면 `function_io.json`(함수별 reads/writes 메타데이터)을 사용합니다.
@@ -114,6 +128,15 @@ Codex CLI 기반 하이브리드 생성:
 
 ```bash
 python tools/generate_function_io.py model.c --llm-provider codex-cli
+```
+
+내부 테스트에서 nested Codex sandbox가 네트워크를 막는 환경이면:
+
+```bash
+python tools/generate_function_io.py model.c \
+  --llm-provider codex-cli \
+  --codex-danger-full-access \
+  --codex-timeout-sec 60
 ```
 
 OpenAI-compatible API 기반 하이브리드 생성 (`responses` / `chat` 선택 가능):
@@ -171,12 +194,27 @@ python src/cvas_mvp.py model.c --cycle-config cycle.json -o output.json
 
 ## 📁 프로젝트 구조
 
-- `src/cvas_mvp.py`: CVAS 핵심 파서 실행 파일
+- `src/cvas_mvp.py`: CVAS CLI 호환 wrapper
+- `src/cvas_cli.py`: CLI front-end (인자 파싱 / I-O / 실행)
+- `src/cvas_pipeline.py`: CVAS 핵심 분석 파이프라인 본체
+- `src/cvas_passes.py`: 함수 단위 전처리 / lowering / 분석 패스
+- `src/cvas_model.py`: 공유 IR 데이터 모델과 cycle rule 정의
+- `src/cvas_index.py`: 프로젝트 소스 수집 / 심볼 인덱싱 / 선언명 추출
+- `src/cvas_cfg.py`: control-flow graph 분석과 control note 추출
+- `src/cvas_callgraph.py`: 함수 호출 그래프와 call sequence 생성
+- `src/cvas_expr.py`: 식 토큰화 / 연산 lowering / operand 분류
+- `src/cvas_serialize.py`: JSON 직렬화 계층
+- `src/cvas_source.py`: CVAS region / function discovery / source helper 공용 모듈
+- `src/cvas_text.py`: 문장 분할 / 괄호 처리 / 식별자 토큰 추출 유틸
 - `src/c_ast_utils.py`: C AST 분석 유틸리티
 - `cvas_wrapper.py`: 분석부터 HTML 생성까지 실행하는 래퍼 스크립트 (출력 폴더에 ELK 자산 자동 복사)
 - `json_to_html.py`: CVAS JSON을 단일 HTML로 변환 (Diagram/Sequence 탭, IO 상태 표시, 드래그/줌 포함)
 - `tools/generate_function_io.py`: `function_io.json` 생성기 (규칙 기반 + LLM 하이브리드)
 - `function_io.json`: Sequence 탭 의존성/병렬 레인 판단용 함수 IO 메타데이터
+- `docs/cvas_datapath_pipeline_design.md`: datapath 중심 II=1 파이프라인 분석 설계 문서
+- `docs/cvas_project_overview.html`: 프로젝트 소개 / 구조 / 사용 흐름 / 명령어 요약 HTML
+- `docs/test_examples_output.html`: `test_examples.c` 기준 최신 샘플 뷰어 HTML
+- `docs/test_examples_output.json`: 샘플 뷰어 HTML 생성에 사용한 최신 JSON 출력
 - `viewer/`: 오프라인 HTML 뷰어 및 ELK.js 번들 자산
 - `fixtures/`: 파싱 회귀 테스트용 C 코드 모음
 
