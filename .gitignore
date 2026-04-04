@@ -40,5 +40,6 @@ Thumbs.db
 
 # Local test outputs
 .gemini/
+.codex
 .codex/
 output.html
