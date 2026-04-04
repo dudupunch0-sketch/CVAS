@@ -8,7 +8,13 @@ from pathlib import Path
 
 
 def run_cvas(input_c: Path, output_json: Path, extra_args: list[str]) -> None:
-    cmd = [sys.executable, str(Path(__file__).parent / "src" / "cvas_mvp.py"), str(input_c), "-o", str(output_json)]
+    cmd = [
+        sys.executable,
+        str(Path(__file__).parent / "src" / "cvas_cli.py"),
+        str(input_c),
+        "-o",
+        str(output_json),
+    ]
     cmd.extend(extra_args)
     result = subprocess.run(cmd, check=False, capture_output=True, text=True)
     if result.returncode != 0:
@@ -52,7 +58,12 @@ def main() -> None:
     parser.add_argument("input_c", help="Input C source file")
     parser.add_argument("output_html", help="Output HTML file")
     parser.add_argument("--output-json", help="Optional path to also write the intermediate JSON")
-    parser.add_argument("--cvas-args", nargs=argparse.REMAINDER, default=[], help="Extra arguments passed to cvas_mvp.py")
+    parser.add_argument(
+        "--cvas-args",
+        nargs=argparse.REMAINDER,
+        default=[],
+        help="Extra arguments passed to cvas_cli.py",
+    )
     args = parser.parse_args()
 
     input_c = Path(args.input_c)

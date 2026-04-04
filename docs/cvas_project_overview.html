@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CVAS Project Overview</title>
+  <style>
+    :root {
+      --bg: #08111f;
+      --panel: rgba(8, 20, 37, 0.78);
+      --panel-strong: rgba(10, 24, 45, 0.92);
+      --border: rgba(133, 199, 255, 0.18);
+      --text: #eef5ff;
+      --muted: #a7bdd7;
+      --cyan: #67e8f9;
+      --blue: #7dd3fc;
+      --violet: #b794f4;
+      --mint: #7ef0cf;
+      --amber: #ffcb7d;
+      --shadow: 0 24px 80px rgba(1, 10, 20, 0.42);
+      --radius: 24px;
+      --mono: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+      --sans: "IBM Plex Sans", "Segoe UI", "Noto Sans KR", sans-serif;
+      --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: var(--sans);
+      background:
+        radial-gradient(circle at 12% 18%, rgba(103, 232, 249, 0.20), transparent 28%),
+        radial-gradient(circle at 86% 12%, rgba(183, 148, 244, 0.20), transparent 30%),
+        radial-gradient(circle at 70% 72%, rgba(126, 240, 207, 0.16), transparent 26%),
+        linear-gradient(180deg, #091322 0%, #07101b 48%, #04070d 100%);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background:
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+      background-size: 28px 28px;
+      opacity: 0.35;
+      pointer-events: none;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9), transparent 90%);
+    }
+
+    .page {
+      width: min(1280px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 32px 0 56px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 34px 34px 30px;
+      border: 1px solid var(--border);
+      border-radius: 32px;
+      background:
+        linear-gradient(135deg, rgba(8, 20, 37, 0.9), rgba(10, 24, 45, 0.82)),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0));
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -120px;
+      top: -100px;
+      width: 360px;
+      height: 360px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(103, 232, 249, 0.26), transparent 66%);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(103, 232, 249, 0.28);
+      background: rgba(103, 232, 249, 0.08);
+      color: var(--cyan);
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, var(--cyan), #bff8ff);
+      box-shadow: 0 0 18px rgba(103, 232, 249, 0.9);
+    }
+
+    h1, h2 {
+      margin: 0;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+    }
+
+    h1 {
+      margin-top: 18px;
+      font-family: var(--serif);
+      font-size: clamp(42px, 6vw, 72px);
+      line-height: 0.96;
+      max-width: 860px;
+    }
+
+    .hero p {
+      max-width: 760px;
+      margin: 18px 0 0;
+      font-size: 18px;
+      color: var(--muted);
+    }
+
+    .hero-grid {
+      margin-top: 28px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.9fr);
+      gap: 20px;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--panel);
+      backdrop-filter: blur(14px);
+      box-shadow: var(--shadow);
+    }
+
+    .summary-panel {
+      padding: 22px 22px 20px;
+    }
+
+    .summary-panel h2,
+    .metric-panel h2,
+    .section-head h2 {
+      font-size: 24px;
+      margin-bottom: 12px;
+      font-family: var(--serif);
+    }
+
+    .summary-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .summary-card {
+      padding: 14px 15px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .summary-card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: #ffffff;
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .summary-card span {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .metric-panel {
+      padding: 22px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .metric-panel::before {
+      content: "";
+      position: absolute;
+      inset: auto 18px 18px auto;
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(183, 148, 244, 0.22), transparent 68%);
+      pointer-events: none;
+    }
+
+    .metrics {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .metric {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .metric b {
+      font-size: 26px;
+      color: #fff;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .section {
+      margin-top: 22px;
+      padding: 26px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .section-head p {
+      margin: 0;
+      max-width: 720px;
+      color: var(--muted);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .flow-card {
+      position: relative;
+      padding: 18px 18px 18px;
+      border-radius: 22px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,0.07);
+      min-height: 220px;
+    }
+
+    .flow-card::after {
+      content: "";
+      position: absolute;
+      right: -8px;
+      top: 50%;
+      width: 18px;
+      height: 18px;
+      transform: translateY(-50%) rotate(45deg);
+      border-top: 1px solid rgba(103, 232, 249, 0.25);
+      border-right: 1px solid rgba(103, 232, 249, 0.25);
+      opacity: 0.65;
+    }
+
+    .flow-card:last-child::after {
+      display: none;
+    }
+
+    .flow-step {
+      color: var(--cyan);
+      font-size: 12px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .flow-card h3,
+    .stack-card h3,
+    .command-card h3,
+    .usage-card h3 {
+      margin: 10px 0 8px;
+      font-size: 22px;
+      font-family: var(--serif);
+    }
+
+    .flow-card p,
+    .stack-card p,
+    .usage-card p {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .chip-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: #fff;
+      background: rgba(103, 232, 249, 0.08);
+      border: 1px solid rgba(103, 232, 249, 0.2);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+      gap: 18px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .stack-card {
+      padding: 18px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.028);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .stack-card ul,
+    .usage-card ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .command-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .command-card {
+      padding: 18px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.065);
+    }
+
+    .command-card p {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    pre {
+      margin: 0;
+      padding: 14px;
+      overflow: auto;
+      border-radius: 16px;
+      background: rgba(2, 8, 17, 0.9);
+      border: 1px solid rgba(125, 211, 252, 0.14);
+      color: #f8fbff;
+      font-size: 13px;
+      line-height: 1.55;
+      font-family: var(--mono);
+    }
+
+    code {
+      font-family: var(--mono);
+    }
+
+    .usage-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .view-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .usage-card {
+      padding: 18px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.065);
+    }
+
+    .view-card {
+      padding: 18px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.065);
+    }
+
+    .view-card h3 {
+      margin: 10px 0 8px;
+      font-size: 20px;
+      font-family: var(--serif);
+    }
+
+    .view-card p {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .view-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #fff;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .footer-note {
+      margin-top: 22px;
+      padding: 18px 20px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.07);
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .accent {
+      color: var(--cyan);
+    }
+
+    .accent-violet {
+      color: var(--violet);
+    }
+
+    .accent-mint {
+      color: var(--mint);
+    }
+
+    @media (max-width: 1080px) {
+      .hero-grid,
+      .grid-2,
+      .flow,
+      .command-grid,
+      .usage-grid,
+      .view-grid,
+      .summary-list {
+        grid-template-columns: 1fr;
+      }
+
+      .flow-card::after {
+        top: auto;
+        bottom: -6px;
+        right: 22px;
+        transform: rotate(135deg);
+      }
+    }
+
+    @media (max-width: 720px) {
+      .page {
+        width: min(100% - 20px, 1280px);
+        padding-top: 18px;
+      }
+
+      .hero,
+      .section {
+        padding: 20px;
+      }
+
+      h1 {
+        font-size: 38px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="eyebrow">CVAS PROJECT DOSSIER</div>
+      <h1>C-model code를 hardware-oriented datapath insight로 바꾸는 분석 파이프라인</h1>
+      <p>
+        CVAS는 <span class="accent">CVAS_START ~ CVAS_END</span> 구간의 C-model을 읽고,
+        함수 구조, 데이터 흐름, 제어 흐름, 호출 그래프, cycle 추정, 시각화 정보를
+        <span class="accent-violet">JSON IR</span>과 <span class="accent-mint">HTML Viewer</span>로 정리하는 도구다.
+      </p>
+
+      <div class="hero-grid">
+        <div class="panel summary-panel">
+          <h2>왜 필요한가</h2>
+          <p>
+            ISP나 HLS 전처리 단계의 C-model은 연산 자체보다
+            <span class="accent">데이터 의존성</span>, <span class="accent">제어 분기</span>,
+            <span class="accent">함수 호출 관계</span>를 읽는 비용이 더 크다.
+            CVAS는 이 비용을 줄여서 datapath 설계와 pipeline 판단에 필요한 사실만 드러낸다.
+          </p>
+          <div class="summary-list">
+            <div class="summary-card">
+              <strong>Core Problem</strong>
+              <span>복잡한 C-model에서 datapath, control, dependency를 수작업으로 해석해야 한다.</span>
+            </div>
+            <div class="summary-card">
+              <strong>Core Solution</strong>
+              <span>정적 분석 중심 파이프라인으로 block / operation / signal / call graph를 추출한다.</span>
+            </div>
+            <div class="summary-card">
+              <strong>Primary Output</strong>
+              <span>CLI 자동화에 바로 쓸 수 있는 machine-readable JSON contract와 operation-flow data.</span>
+            </div>
+            <div class="summary-card">
+              <strong>Secondary Output</strong>
+              <span>Operation flow, control flow, function flow를 읽을 수 있는 standalone HTML viewer.</span>
+            </div>
+          </div>
+        </div>
+
+        <aside class="panel metric-panel">
+          <h2>핵심 포인트</h2>
+          <div class="metrics">
+            <div class="metric">
+              <span>Hardware Target</span>
+              <b>II = 1</b>
+            </div>
+            <div class="metric">
+              <span>Analysis Focus</span>
+              <b>Datapath + Control</b>
+            </div>
+            <div class="metric">
+              <span>Output Contract</span>
+              <b>JSON + HTML</b>
+            </div>
+            <div class="metric">
+              <span>Execution Mode</span>
+              <b>CLI-first</b>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="panel section">
+      <div class="section-head">
+        <div>
+          <h2>핵심 시각화 관점</h2>
+          <p>이 프로젝트에서 중심이 되는 건 일반적인 flow chart가 아니라 hardware 관점의 operation-flow block diagram이다. 나머지 뷰는 이를 보조한다.</p>
+        </div>
+      </div>
+      <div class="view-grid">
+        <article class="view-card">
+          <div class="view-tag">Primary View</div>
+          <h3>Operation Flow</h3>
+          <p>연산 블록과 signal dependency를 연결한 datapath 중심 block diagram이다. 어떤 값이 어디서 생성되고 다음 연산으로 어떻게 전달되는지를 본다.</p>
+          <div class="chip-list">
+            <span class="chip">operations</span>
+            <span class="chip">signals</span>
+            <span class="chip">data dependency</span>
+          </div>
+        </article>
+
+        <article class="view-card">
+          <div class="view-tag">Control View</div>
+          <h3>Control Flow</h3>
+          <p><code>if</code>, loop, nested branch를 CFG 성격으로 보여준다. datapath를 가리는 대신, 제어 분기와 반복 구조를 별도 관점으로 정리한다.</p>
+          <div class="chip-list">
+            <span class="chip">CFG</span>
+            <span class="chip">branch</span>
+            <span class="chip">loop</span>
+          </div>
+        </article>
+
+        <article class="view-card">
+          <div class="view-tag">Function View</div>
+          <h3>Function Flow</h3>
+          <p>함수 호출 순서와 call dependency를 sequence / call graph 형태로 보여준다. 큰 C-model에서 함수 경계와 critical path 후보를 읽기 쉽다.</p>
+          <div class="chip-list">
+            <span class="chip">call graph</span>
+            <span class="chip">sequence</span>
+            <span class="chip">critical path</span>
+          </div>
+        </article>
+
+        <article class="view-card">
+          <div class="view-tag">Tool Flow</div>
+          <h3>Execution Flow</h3>
+          <p>입력 C-model이 JSON과 HTML로 바뀌는 실행 파이프라인이다. 소개 자료에서는 사용법과 자동화 포인트를 설명할 때만 보조적으로 쓴다.</p>
+          <div class="chip-list">
+            <span class="chip">CLI</span>
+            <span class="chip">JSON</span>
+            <span class="chip">HTML</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel section">
+      <div class="section-head">
+        <div>
+          <h2>동작 흐름</h2>
+          <p>입력 C-model이 어떤 단계를 거쳐 hardware-friendly 정보로 바뀌는지 한눈에 보이도록 정리한 흐름이다.</p>
+        </div>
+      </div>
+      <div class="flow">
+        <article class="flow-card">
+          <div class="flow-step">Step 1</div>
+          <h3>Input</h3>
+          <p>C source에서 분석할 구간만 지정한다. CVAS는 전체 컴파일러가 아니라, hardware 해석에 필요한 구간을 안정적으로 뽑는 데 집중한다.</p>
+          <div class="chip-list">
+            <span class="chip">C-model</span>
+            <span class="chip">CVAS_START / CVAS_END</span>
+            <span class="chip">project mode</span>
+          </div>
+        </article>
+
+        <article class="flow-card">
+          <div class="flow-step">Step 2</div>
+          <h3>Static Analysis</h3>
+          <p>expression lowering, assignment normalization, CFG, call graph, unresolved symbol, rough cycle estimation을 만든다. 이 단계가 사실의 기준이다.</p>
+          <div class="chip-list">
+            <span class="chip">operations</span>
+            <span class="chip">signals</span>
+            <span class="chip">CFG</span>
+            <span class="chip">call graph</span>
+          </div>
+        </article>
+
+        <article class="flow-card">
+          <div class="flow-step">Step 3</div>
+          <h3>IR Assembly</h3>
+          <p>분석 결과를 block / operation / signal / flow 구조로 합쳐 CLI와 viewer가 공유하는 JSON contract로 직렬화한다.</p>
+          <div class="chip-list">
+            <span class="chip">blocks</span>
+            <span class="chip">operations</span>
+            <span class="chip">signals</span>
+            <span class="chip">flow</span>
+          </div>
+        </article>
+
+        <article class="flow-card">
+          <div class="flow-step">Step 4</div>
+          <h3>Outputs</h3>
+          <p>자동화용 JSON과 사람 검토용 HTML viewer를 생성한다. 필요하면 function_io와 LLM 보강 단계도 후속으로 붙일 수 있다.</p>
+          <div class="chip-list">
+            <span class="chip">output.json</span>
+            <span class="chip">output.html</span>
+            <span class="chip">function_io.json</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel section">
+      <div class="section-head">
+        <div>
+          <h2>구조와 책임 분리</h2>
+          <p>현재 리팩터링 방향은 CLI 진입점, 분석 파이프라인, 함수 단위 패스, viewer 소비 계층을 분리하는 것이다.</p>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="stack">
+          <article class="stack-card">
+            <h3>실행 계층</h3>
+            <ul>
+              <li><code>src/cvas_mvp.py</code> : 호환용 wrapper</li>
+              <li><code>src/cvas_cli.py</code> : CLI argument parsing / file I/O / execution</li>
+              <li><code>cvas_wrapper.py</code> : JSON 생성 후 HTML viewer까지 한 번에 실행</li>
+            </ul>
+          </article>
+
+          <article class="stack-card">
+            <h3>분석 계층</h3>
+            <ul>
+              <li><code>src/cvas_pipeline.py</code> : orchestration, model assembly</li>
+              <li><code>src/cvas_passes.py</code> : function-level preprocessing / lowering / per-function analysis</li>
+              <li><code>src/cvas_expr.py</code>, <code>src/cvas_cfg.py</code>, <code>src/cvas_callgraph.py</code> : 세부 분석 모듈</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="stack">
+          <article class="stack-card">
+            <h3>계약 계층</h3>
+            <ul>
+              <li><code>src/cvas_model.py</code> : IR dataclass와 cycle rules</li>
+              <li><code>src/cvas_serialize.py</code> : JSON serialization</li>
+              <li>핵심 필드: <code>blocks</code>, <code>operations</code>, <code>signals</code>, <code>flow</code></li>
+            </ul>
+          </article>
+
+          <article class="stack-card">
+            <h3>시각화 계층</h3>
+            <ul>
+              <li><code>json_to_html.py</code> : standalone HTML viewer 생성</li>
+              <li>Diagram 탭: block / signal / operation structure</li>
+              <li>Sequence 탭: 함수 호출 순서, dependency hint, function_io overlay</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel section">
+      <div class="section-head">
+        <div>
+          <h2>주요 명령어</h2>
+          <p>프로젝트 소개 자료에서 바로 복붙 가능한 형태로 정리한 기본 실행 시나리오다.</p>
+        </div>
+      </div>
+      <div class="command-grid">
+        <article class="command-card">
+          <h3>1. 기본 분석</h3>
+          <p>C-model을 읽고 JSON 분석 결과를 만든다.</p>
+          <pre><code>python src/cvas_cli.py model.c -o output.json</code></pre>
+        </article>
+
+        <article class="command-card">
+          <h3>2. HTML Viewer 생성</h3>
+          <p>생성된 JSON을 operation-flow 중심 Diagram 탭과 function-flow Sequence 탭이 포함된 단일 HTML로 바꾼다.</p>
+          <pre><code>python json_to_html.py output.json output.html</code></pre>
+        </article>
+
+        <article class="command-card">
+          <h3>3. End-to-End 실행</h3>
+          <p>분석부터 HTML viewer 생성, ELK asset 복사까지 한 번에 처리한다.</p>
+          <pre><code>python cvas_wrapper.py test_examples.c docs/test_examples_output.html \
+  --output-json docs/test_examples_output.json</code></pre>
+        </article>
+
+        <article class="command-card">
+          <h3>4. function_io 생성</h3>
+          <p>Sequence 탭 dependency lane 품질을 높이기 위한 함수별 reads / writes 메타데이터를 만든다.</p>
+          <pre><code>python tools/generate_function_io.py model.c --llm-provider none</code></pre>
+        </article>
+
+        <article class="command-card">
+          <h3>5. Codex CLI 기반 보강</h3>
+          <p>개발 환경에서 Codex CLI를 이용해 function_io를 refine / verify 한다.</p>
+          <pre><code>python tools/generate_function_io.py model.c \
+  --llm-provider codex-cli \
+  --codex-danger-full-access \
+  --codex-timeout-sec 60</code></pre>
+        </article>
+
+        <article class="command-card">
+          <h3>6. Quick Syntax Check</h3>
+          <p>핵심 실행 파일의 문법 오류를 빠르게 확인한다.</p>
+          <pre><code>python -m py_compile \
+  src/cvas_mvp.py \
+  src/cvas_cli.py \
+  src/cvas_pipeline.py \
+  src/cvas_passes.py \
+  json_to_html.py \
+  tools/generate_function_io.py</code></pre>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel section">
+      <div class="section-head">
+        <div>
+          <h2>사용 시나리오</h2>
+          <p>이 프로젝트를 소개할 때 가장 이해하기 쉬운 대표 사용 흐름이다.</p>
+        </div>
+      </div>
+      <div class="usage-grid">
+        <article class="usage-card">
+          <h3>Hardware Review</h3>
+          <p>기존 C-model의 함수 경계, 데이터 이동, 제어 분기를 빠르게 읽어야 할 때 쓴다.</p>
+          <ul>
+            <li>datapath 후보 파악</li>
+            <li>critical path 확인</li>
+            <li>control-heavy 함수 식별</li>
+          </ul>
+        </article>
+
+        <article class="usage-card">
+          <h3>CLI Automation</h3>
+          <p>배치 실행으로 JSON을 뽑고, 후속 도구나 agent가 그 결과를 읽도록 만들 수 있다.</p>
+          <ul>
+            <li>file-oriented contract</li>
+            <li>project mode indexing</li>
+            <li>deterministic output baseline</li>
+          </ul>
+        </article>
+
+        <article class="usage-card">
+          <h3>Future Roadmap</h3>
+          <p>현재 설계 방향은 II=1 pipeline 해석과 hazard 모델, LLM provenance 계층 추가다.</p>
+          <ul>
+            <li>pipeline candidates</li>
+            <li>memory / control hazards</li>
+            <li>LLM enrichment with static precedence</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="footer-note">
+        <strong class="accent">핵심 메시지</strong>:
+        CVAS는 단순한 C 파서가 아니라, <span class="accent-violet">hardware 설계 관점에서 C-model을 재구성하는 분석 파이프라인</span>이다.
+        최종 목표는 datapath-centric pipeline architecture를 더 빨리 이해하고, 더 안정적으로 자동화 가능한 형태로 정리하는 것이다.
+        최신 소개 문서는 <code>docs/cvas_project_overview.html</code>, 최신 샘플 viewer 산출물은
+        <code>docs/test_examples_output.html</code> / <code>docs/test_examples_output.json</code>에 둔다.
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -16,7 +16,7 @@ from typing import Dict, List, Tuple
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 
-from cvas_mvp import (  # type: ignore
+from cvas_source import (  # type: ignore
     extract_cvas_region,
     find_function_definitions,
     split_top_level_commas,
@@ -91,8 +91,13 @@ def build_codex_env() -> Dict[str, str]:
     return env
 
 
-def call_codex_cli(prompt: str) -> str:
+def call_codex_cli(
+    prompt: str,
+    danger_full_access: bool = False,
+    timeout_sec: int = 180,
+) -> str:
     env = build_codex_env()
+    repo_root = Path(__file__).resolve().parents[1]
     codex_bin = shutil.which("codex", path=env.get("PATH")) or str(
         Path.home() / ".npm-global" / "bin" / "codex"
     )
@@ -100,7 +105,16 @@ def call_codex_cli(prompt: str) -> str:
     try:
         with tempfile.NamedTemporaryFile(prefix="codex_last_", suffix=".txt", delete=False) as tmp:
             tmp_path = tmp.name
-        cmd = [codex_bin, "exec", "-", "--output-last-message", tmp_path]
+        cmd = [
+            codex_bin,
+            "exec",
+            "--cd",
+            str(repo_root),
+            "--skip-git-repo-check",
+        ]
+        if danger_full_access:
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
+        cmd.extend(["-", "--output-last-message", tmp_path])
         result = subprocess.run(
             cmd,
             input=prompt,
@@ -108,7 +122,12 @@ def call_codex_cli(prompt: str) -> str:
             capture_output=True,
             check=False,
             env=env,
+            timeout=timeout_sec,
         )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"codex CLI timed out after {timeout_sec}s; check login/connectivity or increase --codex-timeout-sec"
+        ) from exc
     except FileNotFoundError as exc:
         raise RuntimeError(
             "'codex' command not found. Run this in a Codex CLI environment or use --llm-provider openai-compat."
@@ -181,9 +200,22 @@ def call_openai_compat(prompt: str, model: str, base_url: str, api_key: str, api
     raise RuntimeError("Unexpected OpenAI-compatible response format")
 
 
-def run_llm(provider: str, prompt: str, model: str, base_url: str | None, api_key: str | None, api_mode: str) -> Dict:
+def run_llm(
+    provider: str,
+    prompt: str,
+    model: str,
+    base_url: str | None,
+    api_key: str | None,
+    api_mode: str,
+    codex_danger_full_access: bool = False,
+    codex_timeout_sec: int = 180,
+) -> Dict:
     if provider == "codex-cli":
-        output = call_codex_cli(prompt)
+        output = call_codex_cli(
+            prompt,
+            danger_full_access=codex_danger_full_access,
+            timeout_sec=codex_timeout_sec,
+        )
     elif provider == "openai-compat":
         if not api_key:
             raise ValueError("API key is required for openai-compat provider")
@@ -219,6 +251,17 @@ def main() -> None:
     parser.add_argument("--base-url", help="OpenAI-compatible base URL")
     parser.add_argument("--api-key", help="API key for OpenAI-compatible providers")
     parser.add_argument("--api-mode", choices=["responses", "chat"], default="responses")
+    parser.add_argument(
+        "--codex-danger-full-access",
+        action="store_true",
+        help="Run nested codex exec without sandbox/approvals. Intended for trusted local testing only.",
+    )
+    parser.add_argument(
+        "--codex-timeout-sec",
+        type=int,
+        default=180,
+        help="Timeout for each nested codex exec request in codex-cli mode.",
+    )
     parser.add_argument("--log-file", type=Path, help="Optional path to append detailed execution logs")
 
     args = parser.parse_args()
@@ -262,6 +305,11 @@ def main() -> None:
         )
     else:
         log("Codex CLI mode: using local codex configuration", args.log_file)
+        if args.codex_danger_full_access:
+            log(
+                "Codex CLI mode: nested exec will bypass sandbox/approvals for network access",
+                args.log_file,
+            )
 
     prompt_refine = (
         "You are given C source code and a draft function IO map. "
@@ -274,7 +322,14 @@ def main() -> None:
     log("LLM refine stage: request start", args.log_file)
     try:
         v1_map = run_llm(
-            args.llm_provider, prompt_refine, args.model, args.base_url, api_key, args.api_mode
+            args.llm_provider,
+            prompt_refine,
+            args.model,
+            args.base_url,
+            api_key,
+            args.api_mode,
+            codex_danger_full_access=args.codex_danger_full_access,
+            codex_timeout_sec=args.codex_timeout_sec,
         )
     except Exception as exc:
         log(f"LLM refine stage: failed ({exc})", args.log_file)
@@ -293,7 +348,14 @@ def main() -> None:
     log("LLM verify stage: request start", args.log_file)
     try:
         v2_map = run_llm(
-            args.llm_provider, prompt_verify, args.model, args.base_url, api_key, args.api_mode
+            args.llm_provider,
+            prompt_verify,
+            args.model,
+            args.base_url,
+            api_key,
+            args.api_mode,
+            codex_danger_full_access=args.codex_danger_full_access,
+            codex_timeout_sec=args.codex_timeout_sec,
         )
     except Exception as exc:
         log(f"LLM verify stage: failed ({exc})", args.log_file)

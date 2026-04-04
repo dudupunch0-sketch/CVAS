@@ -1,0 +1,1397 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CVAS Diagram Viewer</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f6f8;
+      --panel-bg: #ffffff;
+      --border: #2f343b;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --edge: #4b5563;
+      --edge-secondary: #9ca3af;
+      --edge-call: #0ea5e9;
+      --highlight: #f59e0b;
+    }
+    body {
+      margin: 0;
+      font-family: "Inter", "Noto Sans", sans-serif;
+      background: var(--bg);
+      color: #111827;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 16px;
+      background: var(--panel-bg);
+      border-bottom: 1px solid #e5e7eb;
+      flex-wrap: wrap;
+    }
+    header input[type="text"] {
+      padding: 6px 10px;
+      min-width: 220px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+    }
+    header label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+    }
+    header button {
+      padding: 6px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: #fff;
+      cursor: pointer;
+    }
+    header .tab {
+      border: 1px solid #d1d5db;
+      border-radius: 999px;
+      padding: 6px 14px;
+      background: #fff;
+      font-size: 13px;
+    }
+    header .tab.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    #ioStatus {
+      font-size: 12px;
+      color: #374151;
+      background: #eef2ff;
+      border: 1px solid #c7d2fe;
+      border-radius: 999px;
+      padding: 4px 10px;
+      white-space: nowrap;
+    }
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      min-height: 0;
+    }
+    #diagram-panel {
+      position: relative;
+      background: #fff;
+      border-right: 1px solid #e5e7eb;
+      overflow: hidden;
+    }
+    #sequence-panel {
+      position: relative;
+      background: #fff;
+      border-right: 1px solid #e5e7eb;
+      overflow: auto;
+      padding: 16px 20px;
+    }
+    #sequence-panel[hidden] {
+      display: none;
+    }
+    .seq-group {
+      flex: 0 0 auto;
+      margin-bottom: 10px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 8px;
+      background: #f9fafb;
+    }
+    .seq-title {
+      font-size: 12px;
+      font-weight: 600;
+      margin: 0 0 6px 0;
+      color: #111827;
+    }
+    .seq-board {
+      position: relative;
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 10px;
+      align-items: flex-start;
+      min-height: 120px;
+      width: max-content;
+      padding: 8px 8px 16px 8px;
+    }
+    .seq-board-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: visible;
+      z-index: 0;
+    }
+    .seq-group {
+      position: relative;
+      z-index: 1;
+    }
+    .seq-group-edge {
+      stroke: #94a3b8;
+      stroke-width: 1.4;
+      fill: none;
+      marker-end: url(#group-arrowhead);
+      opacity: 0.9;
+    }
+    .seq-canvas {
+      position: relative;
+      min-height: 64px;
+      border-radius: 6px;
+      background: #ffffff;
+      border: 1px dashed #e5e7eb;
+    }
+    .seq-node {
+      position: absolute;
+      padding: 3px 7px;
+      background: #fff;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 11px;
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+      cursor: grab;
+      user-select: none;
+      line-height: 1.15;
+    }
+    .seq-count {
+      background: #111827;
+      color: #fff;
+      border-radius: 999px;
+      padding: 2px 6px;
+      font-size: 11px;
+    }
+    .seq-svg {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .seq-edge {
+      stroke: #9ca3af;
+      stroke-width: 1.2;
+      fill: none;
+      marker-end: url(#arrowhead);
+    }
+    #sequence-content {
+      transform-origin: top left;
+    }
+    #detail-panel {
+      background: var(--panel-bg);
+      padding: 12px 16px;
+      overflow: auto;
+    }
+    #detail-panel h2 {
+      margin-top: 0;
+      font-size: 16px;
+    }
+    #detail-json {
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    #anomaly-list {
+      margin-top: 16px;
+      padding: 10px;
+      border: 1px dashed #f59e0b;
+      border-radius: 8px;
+      background: #fffbeb;
+    }
+    #anomaly-list ul {
+      margin: 8px 0 0 16px;
+      padding: 0;
+      font-size: 13px;
+      color: #92400e;
+    }
+    svg {
+      width: 100%;
+      height: 100%;
+    }
+    .node-box {
+      fill: #ffffff;
+      stroke: var(--border);
+      stroke-width: 2;
+      rx: 10;
+      ry: 10;
+    }
+    .node-box.loop {
+      stroke-dasharray: 6 4;
+    }
+    .node-title {
+      font-weight: 600;
+      font-size: 13px;
+      fill: #111827;
+    }
+    .node-line {
+      font-size: 12px;
+      fill: var(--muted);
+    }
+    .edge-line {
+      fill: none;
+      stroke: var(--edge);
+      stroke-width: 1.6;
+    }
+    .edge-line.exec {
+      stroke: var(--edge-secondary);
+      stroke-dasharray: 4 4;
+    }
+    .edge-line.call {
+      stroke: var(--edge-call);
+      stroke-dasharray: 6 3;
+    }
+    .edge-label {
+      font-size: 11px;
+      fill: #374151;
+      pointer-events: none;
+    }
+    .highlight rect {
+      stroke: var(--highlight);
+      stroke-width: 3;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>CVAS Diagram Viewer</strong>
+    <input id="searchInput" type="text" placeholder="Search block_id or block_name" />
+    <label><input id="toggleData" type="checkbox" checked /> Show data-flow edges</label>
+    <label><input id="toggleExec" type="checkbox" /> Show execution-order edges</label>
+    <label><input id="toggleCall" type="checkbox" /> Show call-graph edges</label>
+    <button id="resetBtn">Reset View</button>
+    <button id="tabDiagram" class="tab active">Diagram</button>
+    <button id="tabSequence" class="tab">Sequence</button>
+    <button id="seqZoomOut" class="tab">Seq -</button>
+    <button id="seqZoomReset" class="tab">Seq 100%</button>
+    <button id="seqZoomIn" class="tab">Seq +</button>
+    <button id="seqLoad" class="tab">Load Map</button>
+    <button id="seqExport" class="tab">Export Map</button>
+    <button id="ioLoad" class="tab">Load IO</button>
+    <span id="ioStatus">IO: none</span>
+    <input id="seqFile" type="file" accept="application/json" hidden />
+    <input id="ioFile" type="file" accept="application/json" hidden />
+  </header>
+  <main>
+    <section id="diagram-panel">
+      <svg id="diagramSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+    </section>
+    <section id="sequence-panel" hidden>
+      <div id="sequence-content"></div>
+    </section>
+    <aside id="detail-panel">
+      <h2>Details</h2>
+      <div id="detail-json">Click a node or edge to inspect data.</div>
+      <div id="anomaly-list" hidden>
+        <strong>Anomaly Report</strong>
+        <ul id="anomaly-items"></ul>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Ensure ./assets/elk.bundled.js is available next to this HTML file for offline use. -->
+  <script src="./assets/elk.bundled.js"></script>
+  <script>
+  const DATA = {"blocks": [{"block_id": "B1", "block_name": "clamp_int", "inputs": ["value", "lo", "hi"], "outputs": ["return"], "internal_ops_summary": {"add": 0, "compare": 2, "logic": 0, "multiply": 0, "copy": 0, "shift": 0, "bitwise": 0, "const": 0, "load": 0, "store": 0}, "estimated_cycles": 1, "note": "contains conditional; internal op nodes emitted", "position": {"x": "TBD by drawing tool", "y": "TBD by drawing tool"}, "cfg": {"function_name": "clamp_int", "basic_blocks": [{"block_id": "clamp_int_b1", "parent_function": "clamp_int", "operations": [], "predecessors": [], "successors": ["clamp_int_b2"], "block_type": "entry"}, {"block_id": "clamp_int_b2", "parent_function": "clamp_int", "operations": ["B1_op_1", "B1_op_2"], "predecessors": ["clamp_int_b1"], "successors": ["clamp_int_b3"], "block_type": "sequential"}, {"block_id": "clamp_int_b3", "parent_function": "clamp_int", "operations": [], "predecessors": ["clamp_int_b2"], "successors": ["clamp_int_b4", "clamp_int_b5"], "block_type": "conditional_branch"}, {"block_id": "clamp_int_b4", "parent_function": "clamp_int", "operations": [], "predecessors": ["clamp_int_b3"], "successors": ["clamp_int_b5"], "block_type": "sequential"}, {"block_id": "clamp_int_b5", "parent_function": "clamp_int", "operations": [], "predecessors": ["clamp_int_b4", "clamp_int_b3"], "successors": ["clamp_int_b6"], "block_type": "sequential"}, {"block_id": "clamp_int_b6", "parent_function": "clamp_int", "operations": [], "predecessors": ["clamp_int_b5"], "successors": ["clamp_int_b7", "clamp_int_b8"], "block_type": "conditional_branch"}, {"block_id": "clamp_int_b7", "parent_function": "clamp_int", "operations": [], "predecessors": ["clamp_int_b6"], "successors": ["clamp_int_b8"], "block_type": "sequential"}, {"block_id": "clamp_int_b8", "parent_function": "clamp_int", "operations": [], "predecessors": ["clamp_int_b7", "clamp_int_b6"], "successors": ["clamp_int_b9"], "block_type": "sequential"}, {"block_id": "clamp_int_b9", "parent_function": "clamp_int", "operations": [], "predecessors": ["clamp_int_b8"], "successors": [], "block_type": "exit"}], "entry_block": "clamp_int_b1", "exit_blocks": ["clamp_int_b9"], "loops": [], "has_branches": true, "max_nesting_depth": 1, "analysis_confidence": "high", "analysis_coverage": 1.0, "analysis_limitations": []}}, {"block_id": "B2", "block_name": "abs_int", "inputs": ["x"], "outputs": ["return"], "internal_ops_summary": {"add": 0, "compare": 1, "logic": 1, "multiply": 0, "copy": 0, "shift": 0, "bitwise": 0, "const": 0, "load": 0, "store": 0}, "estimated_cycles": 2, "note": "no loop/conditional detected; internal op nodes emitted", "position": {"x": "TBD by drawing tool", "y": "TBD by drawing tool"}, "cfg": {"function_name": "abs_int", "basic_blocks": [{"block_id": "abs_int_b1", "parent_function": "abs_int", "operations": [], "predecessors": [], "successors": ["abs_int_b2"], "block_type": "entry"}, {"block_id": "abs_int_b2", "parent_function": "abs_int", "operations": ["B2_op_1", "B2_op_2"], "predecessors": ["abs_int_b1"], "successors": ["abs_int_b3"], "block_type": "sequential"}, {"block_id": "abs_int_b3", "parent_function": "abs_int", "operations": [], "predecessors": ["abs_int_b2"], "successors": [], "block_type": "exit"}], "entry_block": "abs_int_b1", "exit_blocks": ["abs_int_b3"], "loops": [], "has_branches": false, "max_nesting_depth": 0, "analysis_confidence": "high", "analysis_coverage": 1.0, "analysis_limitations": []}}, {"block_id": "B3", "block_name": "median9", "inputs": ["v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8"], "outputs": ["return"], "internal_ops_summary": {"add": 3, "compare": 3, "logic": 0, "multiply": 0, "copy": 0, "shift": 0, "bitwise": 0, "const": 1, "load": 3, "store": 2}, "estimated_cycles": 5, "note": "contains loop; contains conditional; internal op nodes emitted", "position": {"x": "TBD by drawing tool", "y": "TBD by drawing tool"}, "cfg": {"function_name": "median9", "basic_blocks": [{"block_id": "median9_b1", "parent_function": "median9", "operations": [], "predecessors": [], "successors": ["median9_b2"], "block_type": "entry"}, {"block_id": "median9_b2", "parent_function": "median9", "operations": ["B3_op_1", "B3_op_2", "B3_op_3", "B3_op_4", "B3_op_5", "B3_op_6", "B3_op_7", "B3_op_8", "B3_op_9", "B3_op_10", "B3_op_11", "B3_op_12"], "predecessors": ["median9_b1"], "successors": ["median9_b3"], "block_type": "sequential"}, {"block_id": "median9_b3", "parent_function": "median9", "operations": [], "predecessors": ["median9_b2", "median9_b4"], "successors": ["median9_b4", "median9_b5"], "block_type": "loop_header"}, {"block_id": "median9_b4", "parent_function": "median9", "operations": [], "predecessors": ["median9_b3"], "successors": ["median9_b3"], "block_type": "loop_body"}, {"block_id": "median9_b5", "parent_function": "median9", "operations": [], "predecessors": ["median9_b3"], "successors": ["median9_b6"], "block_type": "sequential"}, {"block_id": "median9_b6", "parent_function": "median9", "operations": [], "predecessors": ["median9_b5", "median9_b7"], "successors": ["median9_b7", "median9_b8"], "block_type": "loop_header"}, {"block_id": "median9_b7", "parent_function": "median9", "operations": [], "predecessors": ["median9_b6"], "successors": ["median9_b6"], "block_type": "loop_body"}, {"block_id": "median9_b8", "parent_function": "median9", "operations": [], "predecessors": ["median9_b6"], "successors": ["median9_b9"], "block_type": "sequential"}, {"block_id": "median9_b9", "parent_function": "median9", "operations": [], "predecessors": ["median9_b8"], "successors": ["median9_b10", "median9_b11"], "block_type": "conditional_branch"}, {"block_id": "median9_b10", "parent_function": "median9", "operations": [], "predecessors": ["median9_b9"], "successors": ["median9_b11"], "block_type": "sequential"}, {"block_id": "median9_b11", "parent_function": "median9", "operations": [], "predecessors": ["median9_b10", "median9_b9"], "successors": ["median9_b12"], "block_type": "sequential"}, {"block_id": "median9_b12", "parent_function": "median9", "operations": [], "predecessors": ["median9_b11"], "successors": [], "block_type": "exit"}], "entry_block": "median9_b1", "exit_blocks": ["median9_b12"], "loops": [{"loop_id": "median9_loop_1", "header_block": "median9_b3", "body_blocks": ["median9_b4"], "exit_blocks": ["median9_b5"], "nesting_level": 1, "estimated_iterations": "unknown"}, {"loop_id": "median9_loop_2", "header_block": "median9_b6", "body_blocks": ["median9_b7"], "exit_blocks": ["median9_b8"], "nesting_level": 1, "estimated_iterations": "unknown"}], "has_branches": true, "max_nesting_depth": 3, "analysis_confidence": "high", "analysis_coverage": 1.0, "analysis_limitations": []}}, {"block_id": "B4", "block_name": "get_pixel", "inputs": ["raw", "x", "y", "width", "height"], "outputs": ["return"], "internal_ops_summary": {"add": 2, "compare": 0, "logic": 0, "multiply": 0, "copy": 0, "shift": 0, "bitwise": 0, "const": 0, "load": 1, "store": 0}, "estimated_cycles": 2, "note": "no loop/conditional detected; internal op nodes emitted", "position": {"x": "TBD by drawing tool", "y": "TBD by drawing tool"}, "cfg": {"function_name": "get_pixel", "basic_blocks": [{"block_id": "get_pixel_b1", "parent_function": "get_pixel", "operations": [], "predecessors": [], "successors": ["get_pixel_b2"], "block_type": "entry"}, {"block_id": "get_pixel_b2", "parent_function": "get_pixel", "operations": ["B4_op_1", "B4_op_2", "B4_op_3"], "predecessors": ["get_pixel_b1"], "successors": ["get_pixel_b3"], "block_type": "sequential"}, {"block_id": "get_pixel_b3", "parent_function": "get_pixel", "operations": [], "predecessors": ["get_pixel_b2"], "successors": [], "block_type": "exit"}], "entry_block": "get_pixel_b1", "exit_blocks": ["get_pixel_b3"], "loops": [], "has_branches": false, "max_nesting_depth": 0, "analysis_confidence": "high", "analysis_coverage": 1.0, "analysis_limitations": []}}, {"block_id": "B5", "block_name": "is_green", "inputs": ["x", "y"], "outputs": ["return"], "internal_ops_summary": {"add": 0, "compare": 4, "logic": 3, "multiply": 0, "copy": 0, "shift": 0, "bitwise": 4, "const": 0, "load": 0, "store": 0}, "estimated_cycles": 3, "note": "no loop/conditional detected; internal op nodes emitted", "position": {"x": "TBD by drawing tool", "y": "TBD by drawing tool"}, "cfg": {"function_name": "is_green", "basic_blocks": [{"block_id": "is_green_b1", "parent_function": "is_green", "operations": [], "predecessors": [], "successors": ["is_green_b2"], "block_type": "entry"}, {"block_id": "is_green_b2", "parent_function": "is_green", "operations": ["B5_op_1", "B5_op_2", "B5_op_3", "B5_op_4", "B5_op_5", "B5_op_6", "B5_op_7", "B5_op_8", "B5_op_9", "B5_op_10", "B5_op_11"], "predecessors": ["is_green_b1"], "successors": ["is_green_b3"], "block_type": "sequential"}, {"block_id": "is_green_b3", "parent_function": "is_green", "operations": [], "predecessors": ["is_green_b2"], "successors": [], "block_type": "exit"}], "entry_block": "is_green_b1", "exit_blocks": ["is_green_b3"], "loops": [], "has_branches": false, "max_nesting_depth": 0, "analysis_confidence": "high", "analysis_coverage": 1.0, "analysis_limitations": []}}, {"block_id": "B6", "block_name": "is_red", "inputs": ["x", "y"], "outputs": ["return"], "internal_ops_summary": {"add": 0, "compare": 2, "logic": 1, "multiply": 0, "copy": 0, "shift": 0, "bitwise": 2, "const": 0, "load": 0, "store": 0}, "estimated_cycles": 3, "note": "no loop/conditional detected; internal op nodes emitted", "position": {"x": "TBD by drawing tool", "y": "TBD by drawing tool"}, "cfg": {"function_name": "is_red", "basic_blocks": [{"block_id": "is_red_b1", "parent_function": "is_red", "operations": [], "predecessors": [], "successors": ["is_red_b2"], "block_type": "entry"}, {"block_id": "is_red_b2", "parent_function": "is_red", "operations": ["B6_op_1", "B6_op_2", "B6_op_3", "B6_op_4", "B6_op_5"], "predecessors": ["is_red_b1"], "successors": ["is_red_b3"], "block_type": "sequential"}, {"block_id": "is_red_b3", "parent_function": "is_red", "operations": [], "predecessors": ["is_red_b2"], "successors": [], "block_type": "exit"}], "entry_block": "is_red_b1", "exit_blocks": ["is_red_b3"], "loops": [], "has_branches": false, "max_nesting_depth": 0, "analysis_confidence": "high", "analysis_coverage": 1.0, "analysis_limitations": []}}, {"block_id": "B7", "block_name": "is_blue", "inputs": ["x", "y"], "outputs": ["return"], "internal_ops_summary": {"add": 0, "compare": 2, "logic": 1, "multiply": 0, "copy": 0, "shift": 0, "bitwise": 2, "const": 0, "load": 0, "store": 0}, "estimated_cycles": 3, "note": "no loop/conditional detected; internal op nodes emitted", "position": {"x": "TBD by drawing tool", "y": "TBD by drawing tool"}, "cfg": {"function_name": "is_blue", "basic_blocks": [{"block_id": "is_blue_b1", "parent_function": "is_blue", "operations": [], "predecessors": [], "successors": ["is_blue_b2"], "block_type": "entry"}, {"block_id": "is_blue_b2", "parent_function": "is_blue", "operations": ["B7_op_1", "B7_op_2", "B7_op_3", "B7_op_4", "B7_op_5"], "predecessors": ["is_blue_b1"], "successors": ["is_blue_b3"], "block_type": "sequential"}, {"block_id": "is_blue_b3", "parent_function": "is_blue", "operations": [], "predecessors": ["is_blue_b2"], "successors": [], "block_type": "exit"}], "entry_block": "is_blue_b1", "exit_blocks": ["is_blue_b3"], "loops": [], "has_branches": false, "max_nesting_depth": 0, "analysis_confidence": "high", "analysis_coverage": 1.0, "analysis_limitations": []}}, {"block_id": "B8", "block_name": "bpc_pixel", "inputs": ["raw", "x", "y", "width", "height", "threshold"], "outputs": ["return"], "internal_ops_summary": {"add": 13, "compare": 1, "logic": 1, "multiply": 0, "copy": 2, "shift": 0, "bitwise": 0, "const": 1, "load": 0, "store": 0}, "estimated_cycles": 8, "note": "no loop/conditional detected; internal op nodes emitted", "position": {"x": "TBD by drawing tool", "y": "TBD by drawing tool"}, "cfg": {"function_name": "bpc_pixel", "basic_blocks": [{"block_id": "bpc_pixel_b1", "parent_function": "bpc_pixel", "operations": [], "predecessors": [], "successors": ["bpc_pixel_b2"], "block_type": "entry"}, {"block_id": "bpc_pixel_b2", "parent_function": "bpc_pixel", "operations": ["B8_op_1", "B8_op_2", "B8_op_3", "B8_op_4", "B8_op_5", "B8_op_6", "B8_op_7", "B8_op_8", "B8_op_9", "B8_op_10", "B8_op_11", "B8_op_12", "B8_op_13", "B8_op_14", "B8_op_15", "B8_op_16", "B8_op_17", "B8_op_18"], "predecessors": ["bpc_pixel_b1"], "successors": ["bpc_pixel_b3"], "block_type": "sequential"}, {"block_id": "bpc_pixel_b3", "parent_function": "bpc_pixel", "operations": [], "predecessors": ["bpc_pixel_b2"], "successors": [], "block_type": "exit"}], "entry_block": "bpc_pixel_b1", "exit_blocks": ["bpc_pixel_b3"], "loops": [], "has_branches": false, "max_nesting_depth": 0, "analysis_confidence": "high", "analysis_coverage": 1.0, "analysis_limitations": []}}, {"block_id": "B9", "block_name": "bpc_grbg_3x3", "inputs": ["raw", "out", "width", "height", "threshold"], "outputs": [], "internal_ops_summary": {"add": 2, "compare": 2, "logic": 2, "multiply": 0, "copy": 0, "shift": 0, "bitwise": 0, "const": 3, "load": 0, "store": 2}, "estimated_cycles": 5, "note": "contains loop; contains conditional; internal op nodes emitted", "position": {"x": "TBD by drawing tool", "y": "TBD by drawing tool"}, "cfg": {"function_name": "bpc_grbg_3x3", "basic_blocks": [{"block_id": "bpc_grbg_3x3_b1", "parent_function": "bpc_grbg_3x3", "operations": [], "predecessors": [], "successors": ["bpc_grbg_3x3_b2"], "block_type": "entry"}, {"block_id": "bpc_grbg_3x3_b2", "parent_function": "bpc_grbg_3x3", "operations": ["B9_op_1", "B9_op_2", "B9_op_3", "B9_op_4", "B9_op_5", "B9_op_6", "B9_op_7", "B9_op_8", "B9_op_9", "B9_op_10", "B9_op_11"], "predecessors": ["bpc_grbg_3x3_b1"], "successors": ["bpc_grbg_3x3_b3"], "block_type": "sequential"}, {"block_id": "bpc_grbg_3x3_b3", "parent_function": "bpc_grbg_3x3", "operations": [], "predecessors": ["bpc_grbg_3x3_b2", "bpc_grbg_3x3_b4"], "successors": ["bpc_grbg_3x3_b4", "bpc_grbg_3x3_b5"], "block_type": "loop_header"}, {"block_id": "bpc_grbg_3x3_b4", "parent_function": "bpc_grbg_3x3", "operations": [], "predecessors": ["bpc_grbg_3x3_b3"], "successors": ["bpc_grbg_3x3_b3"], "block_type": "loop_body"}, {"block_id": "bpc_grbg_3x3_b5", "parent_function": "bpc_grbg_3x3", "operations": [], "predecessors": ["bpc_grbg_3x3_b3"], "successors": ["bpc_grbg_3x3_b6"], "block_type": "sequential"}, {"block_id": "bpc_grbg_3x3_b6", "parent_function": "bpc_grbg_3x3", "operations": [], "predecessors": ["bpc_grbg_3x3_b5", "bpc_grbg_3x3_b7"], "successors": ["bpc_grbg_3x3_b7", "bpc_grbg_3x3_b8"], "block_type": "loop_header"}, {"block_id": "bpc_grbg_3x3_b7", "parent_function": "bpc_grbg_3x3", "operations": [], "predecessors": ["bpc_grbg_3x3_b6"], "successors": ["bpc_grbg_3x3_b6"], "block_type": "loop_body"}, {"block_id": "bpc_grbg_3x3_b8", "parent_function": "bpc_grbg_3x3", "operations": [], "predecessors": ["bpc_grbg_3x3_b6"], "successors": ["bpc_grbg_3x3_b9"], "block_type": "sequential"}, {"block_id": "bpc_grbg_3x3_b9", "parent_function": "bpc_grbg_3x3", "operations": [], "predecessors": ["bpc_grbg_3x3_b8"], "successors": ["bpc_grbg_3x3_b10", "bpc_grbg_3x3_b11"], "block_type": "conditional_branch"}, {"block_id": "bpc_grbg_3x3_b10", "parent_function": "bpc_grbg_3x3", "operations": [], "predecessors": ["bpc_grbg_3x3_b9"], "successors": ["bpc_grbg_3x3_b12"], "block_type": "sequential"}, {"block_id": "bpc_grbg_3x3_b11", "parent_function": "bpc_grbg_3x3", "operations": [], "predecessors": ["bpc_grbg_3x3_b9"], "successors": ["bpc_grbg_3x3_b12"], "block_type": "sequential"}, {"block_id": "bpc_grbg_3x3_b12", "parent_function": "bpc_grbg_3x3", "operations": [], "predecessors": ["bpc_grbg_3x3_b10", "bpc_grbg_3x3_b11"], "successors": ["bpc_grbg_3x3_b13"], "block_type": "sequential"}, {"block_id": "bpc_grbg_3x3_b13", "parent_function": "bpc_grbg_3x3", "operations": [], "predecessors": ["bpc_grbg_3x3_b12"], "successors": [], "block_type": "exit"}], "entry_block": "bpc_grbg_3x3_b1", "exit_blocks": ["bpc_grbg_3x3_b13"], "loops": [{"loop_id": "bpc_grbg_3x3_loop_1", "header_block": "bpc_grbg_3x3_b3", "body_blocks": ["bpc_grbg_3x3_b4"], "exit_blocks": ["bpc_grbg_3x3_b5"], "nesting_level": 1, "estimated_iterations": "unknown"}, {"loop_id": "bpc_grbg_3x3_loop_2", "header_block": "bpc_grbg_3x3_b6", "body_blocks": ["bpc_grbg_3x3_b7"], "exit_blocks": ["bpc_grbg_3x3_b8"], "nesting_level": 1, "estimated_iterations": "unknown"}], "has_branches": true, "max_nesting_depth": 3, "analysis_confidence": "high", "analysis_coverage": 1.0, "analysis_limitations": []}}, {"block_id": "B10", "block_name": "main", "inputs": [], "outputs": ["return"], "internal_ops_summary": {"add": 0, "compare": 0, "logic": 0, "multiply": 0, "copy": 0, "shift": 0, "bitwise": 0, "const": 1, "load": 0, "store": 0}, "estimated_cycles": 1, "note": "no loop/conditional detected; internal op nodes emitted", "position": {"x": "TBD by drawing tool", "y": "TBD by drawing tool"}, "cfg": {"function_name": "main", "basic_blocks": [{"block_id": "main_b1", "parent_function": "main", "operations": [], "predecessors": [], "successors": ["main_b2"], "block_type": "entry"}, {"block_id": "main_b2", "parent_function": "main", "operations": ["B10_op_1"], "predecessors": ["main_b1"], "successors": ["main_b3"], "block_type": "sequential"}, {"block_id": "main_b3", "parent_function": "main", "operations": [], "predecessors": ["main_b2"], "successors": [], "block_type": "exit"}], "entry_block": "main_b1", "exit_blocks": ["main_b3"], "loops": [], "has_branches": false, "max_nesting_depth": 0, "analysis_confidence": "high", "analysis_coverage": 1.0, "analysis_limitations": []}}], "operations": [{"op_id": "B1_op_1", "op_type": "compare", "inputs": ["value", "lo"], "outputs": ["cond_1"], "parent_block_id": "B1", "source_line": null}, {"op_id": "B1_op_2", "op_type": "compare", "inputs": ["value", "hi"], "outputs": ["cond_2"], "parent_block_id": "B1", "source_line": null}, {"op_id": "B2_op_1", "op_type": "compare", "inputs": ["0", "-x"], "outputs": ["tmp_2"], "parent_block_id": "B2", "source_line": null}, {"op_id": "B2_op_2", "op_type": "logic", "inputs": ["x", "tmp_2", "x"], "outputs": ["return"], "parent_block_id": "B2", "source_line": null}, {"op_id": "B3_op_1", "op_type": "const", "inputs": ["0"], "outputs": ["i"], "parent_block_id": "B3", "source_line": null}, {"op_id": "B3_op_2", "op_type": "compare", "inputs": ["i", "9"], "outputs": ["cond_1"], "parent_block_id": "B3", "source_line": null}, {"op_id": "B3_op_3", "op_type": "add", "inputs": ["i", "1"], "outputs": ["j"], "parent_block_id": "B3", "source_line": null}, {"op_id": "B3_op_4", "op_type": "compare", "inputs": ["j", "9"], "outputs": ["cond_2"], "parent_block_id": "B3", "source_line": null}, {"op_id": "B3_op_5", "op_type": "compare", "inputs": ["v[j]", "v[i]"], "outputs": ["cond_3"], "parent_block_id": "B3", "source_line": null}, {"op_id": "B3_op_6", "op_type": "load", "inputs": ["v[i]"], "outputs": ["t"], "parent_block_id": "B3", "source_line": null}, {"op_id": "B3_op_7", "op_type": "load", "inputs": ["v[j]"], "outputs": ["tmp_8"], "parent_block_id": "B3", "source_line": null}, {"op_id": "B3_op_8", "op_type": "store", "inputs": ["tmp_8"], "outputs": ["v[i]"], "parent_block_id": "B3", "source_line": null}, {"op_id": "B3_op_9", "op_type": "store", "inputs": ["t"], "outputs": ["v[j]"], "parent_block_id": "B3", "source_line": null}, {"op_id": "B3_op_10", "op_type": "add", "inputs": ["j", "1"], "outputs": ["j"], "parent_block_id": "B3", "source_line": null}, {"op_id": "B3_op_11", "op_type": "add", "inputs": ["i", "1"], "outputs": ["i"], "parent_block_id": "B3", "source_line": null}, {"op_id": "B3_op_12", "op_type": "load", "inputs": ["v[4]"], "outputs": ["return"], "parent_block_id": "B3", "source_line": null}, {"op_id": "B4_op_1", "op_type": "add", "inputs": ["width", "1"], "outputs": ["cx"], "parent_block_id": "B4", "source_line": null}, {"op_id": "B4_op_2", "op_type": "add", "inputs": ["height", "1"], "outputs": ["cy"], "parent_block_id": "B4", "source_line": null}, {"op_id": "B4_op_3", "op_type": "load", "inputs": ["raw[cy * width + cx]"], "outputs": ["return"], "parent_block_id": "B4", "source_line": null}, {"op_id": "B5_op_1", "op_type": "bitwise", "inputs": ["y", "1"], "outputs": ["tmp_2"], "parent_block_id": "B5", "source_line": null}, {"op_id": "B5_op_2", "op_type": "compare", "inputs": ["tmp_2", "0"], "outputs": ["tmp_3"], "parent_block_id": "B5", "source_line": null}, {"op_id": "B5_op_3", "op_type": "bitwise", "inputs": ["x", "1"], "outputs": ["tmp_4"], "parent_block_id": "B5", "source_line": null}, {"op_id": "B5_op_4", "op_type": "compare", "inputs": ["tmp_4", "0"], "outputs": ["tmp_5"], "parent_block_id": "B5", "source_line": null}, {"op_id": "B5_op_5", "op_type": "logic", "inputs": ["tmp_3", "tmp_5"], "outputs": ["tmp_6"], "parent_block_id": "B5", "source_line": null}, {"op_id": "B5_op_6", "op_type": "bitwise", "inputs": ["y", "1"], "outputs": ["tmp_7"], "parent_block_id": "B5", "source_line": null}, {"op_id": "B5_op_7", "op_type": "compare", "inputs": ["tmp_7", "1"], "outputs": ["tmp_8"], "parent_block_id": "B5", "source_line": null}, {"op_id": "B5_op_8", "op_type": "bitwise", "inputs": ["x", "1"], "outputs": ["tmp_9"], "parent_block_id": "B5", "source_line": null}, {"op_id": "B5_op_9", "op_type": "compare", "inputs": ["tmp_9", "1"], "outputs": ["tmp_10"], "parent_block_id": "B5", "source_line": null}, {"op_id": "B5_op_10", "op_type": "logic", "inputs": ["tmp_8", "tmp_10"], "outputs": ["tmp_11"], "parent_block_id": "B5", "source_line": null}, {"op_id": "B5_op_11", "op_type": "logic", "inputs": ["tmp_6", "tmp_11"], "outputs": ["return"], "parent_block_id": "B5", "source_line": null}, {"op_id": "B6_op_1", "op_type": "bitwise", "inputs": ["y", "1"], "outputs": ["tmp_2"], "parent_block_id": "B6", "source_line": null}, {"op_id": "B6_op_2", "op_type": "compare", "inputs": ["tmp_2", "0"], "outputs": ["tmp_3"], "parent_block_id": "B6", "source_line": null}, {"op_id": "B6_op_3", "op_type": "bitwise", "inputs": ["x", "1"], "outputs": ["tmp_4"], "parent_block_id": "B6", "source_line": null}, {"op_id": "B6_op_4", "op_type": "compare", "inputs": ["tmp_4", "1"], "outputs": ["tmp_5"], "parent_block_id": "B6", "source_line": null}, {"op_id": "B6_op_5", "op_type": "logic", "inputs": ["tmp_3", "tmp_5"], "outputs": ["return"], "parent_block_id": "B6", "source_line": null}, {"op_id": "B7_op_1", "op_type": "bitwise", "inputs": ["y", "1"], "outputs": ["tmp_2"], "parent_block_id": "B7", "source_line": null}, {"op_id": "B7_op_2", "op_type": "compare", "inputs": ["tmp_2", "1"], "outputs": ["tmp_3"], "parent_block_id": "B7", "source_line": null}, {"op_id": "B7_op_3", "op_type": "bitwise", "inputs": ["x", "1"], "outputs": ["tmp_4"], "parent_block_id": "B7", "source_line": null}, {"op_id": "B7_op_4", "op_type": "compare", "inputs": ["tmp_4", "0"], "outputs": ["tmp_5"], "parent_block_id": "B7", "source_line": null}, {"op_id": "B7_op_5", "op_type": "logic", "inputs": ["tmp_3", "tmp_5"], "outputs": ["return"], "parent_block_id": "B7", "source_line": null}, {"op_id": "B8_op_1", "op_type": "add", "inputs": ["1", "y"], "outputs": ["tmp_2"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_2", "op_type": "add", "inputs": ["width", "height"], "outputs": ["p0"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_3", "op_type": "add", "inputs": ["width", "height"], "outputs": ["p1"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_4", "op_type": "add", "inputs": ["1", "y"], "outputs": ["tmp_5"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_5", "op_type": "add", "inputs": ["width", "height"], "outputs": ["p2"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_6", "op_type": "add", "inputs": ["width", "height"], "outputs": ["p3"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_7", "op_type": "copy", "inputs": ["height"], "outputs": ["p4"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_8", "op_type": "add", "inputs": ["width", "height"], "outputs": ["p5"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_9", "op_type": "add", "inputs": ["1", "y"], "outputs": ["tmp_10"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_10", "op_type": "add", "inputs": ["width", "height"], "outputs": ["p6"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_11", "op_type": "add", "inputs": ["width", "height"], "outputs": ["p7"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_12", "op_type": "add", "inputs": ["1", "y"], "outputs": ["tmp_13"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_13", "op_type": "add", "inputs": ["width", "height"], "outputs": ["p8"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_14", "op_type": "copy", "inputs": ["p8"], "outputs": ["med"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_15", "op_type": "add", "inputs": ["p4", "med"], "outputs": ["diff"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_16", "op_type": "compare", "inputs": ["diff", "threshold"], "outputs": ["tmp_17"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_17", "op_type": "logic", "inputs": ["tmp_17", "med", "p4"], "outputs": ["fixed"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B8_op_18", "op_type": "const", "inputs": ["4095"], "outputs": ["return"], "parent_block_id": "B8", "source_line": null}, {"op_id": "B9_op_1", "op_type": "const", "inputs": ["0"], "outputs": ["x"], "parent_block_id": "B9", "source_line": null}, {"op_id": "B9_op_2", "op_type": "const", "inputs": ["0"], "outputs": ["y"], "parent_block_id": "B9", "source_line": null}, {"op_id": "B9_op_3", "op_type": "compare", "inputs": ["y", "height"], "outputs": ["cond_1"], "parent_block_id": "B9", "source_line": null}, {"op_id": "B9_op_4", "op_type": "const", "inputs": ["0"], "outputs": ["x"], "parent_block_id": "B9", "source_line": null}, {"op_id": "B9_op_5", "op_type": "compare", "inputs": ["x", "width"], "outputs": ["cond_2"], "parent_block_id": "B9", "source_line": null}, {"op_id": "B9_op_6", "op_type": "logic", "inputs": ["x", "y"], "outputs": ["tmp_7"], "parent_block_id": "B9", "source_line": null}, {"op_id": "B9_op_7", "op_type": "logic", "inputs": ["x", "y"], "outputs": ["cond_3"], "parent_block_id": "B9", "source_line": null}, {"op_id": "B9_op_8", "op_type": "store", "inputs": ["threshold"], "outputs": ["out[y * width + x]"], "parent_block_id": "B9", "source_line": null}, {"op_id": "B9_op_9", "op_type": "store", "inputs": ["height"], "outputs": ["out[y * width + x]"], "parent_block_id": "B9", "source_line": null}, {"op_id": "B9_op_10", "op_type": "add", "inputs": ["x", "1"], "outputs": ["x"], "parent_block_id": "B9", "source_line": null}, {"op_id": "B9_op_11", "op_type": "add", "inputs": ["y", "1"], "outputs": ["y"], "parent_block_id": "B9", "source_line": null}, {"op_id": "B10_op_1", "op_type": "const", "inputs": ["20"], "outputs": ["result"], "parent_block_id": "B10", "source_line": null}], "signals": [{"source_id": "B1", "source_type": "block", "destination_id": "B1_op_1", "destination_type": "operation", "signal_name": "value", "direction": "internal", "comment": "operand flow"}, {"source_id": "B1", "source_type": "block", "destination_id": "B1_op_1", "destination_type": "operation", "signal_name": "lo", "direction": "internal", "comment": "operand flow"}, {"source_id": "B1", "source_type": "block", "destination_id": "B1_op_2", "destination_type": "operation", "signal_name": "value", "direction": "internal", "comment": "operand flow"}, {"source_id": "B1", "source_type": "block", "destination_id": "B1_op_2", "destination_type": "operation", "signal_name": "hi", "direction": "internal", "comment": "operand flow"}, {"source_id": "B1", "source_type": "block", "destination_id": "B1", "destination_type": "block", "signal_name": "return", "direction": "out", "comment": "direct return"}, {"source_id": "B2", "source_type": "block", "destination_id": "B2_op_2", "destination_type": "operation", "signal_name": "x", "direction": "internal", "comment": "operand flow"}, {"source_id": "B2_op_1", "source_type": "operation", "destination_id": "B2_op_2", "destination_type": "operation", "signal_name": "tmp_2", "direction": "internal", "comment": "operand flow"}, {"source_id": "B2", "source_type": "block", "destination_id": "B2_op_2", "destination_type": "operation", "signal_name": "x", "direction": "internal", "comment": "operand flow"}, {"source_id": "B2_op_2", "source_type": "operation", "destination_id": "B2", "destination_type": "block", "signal_name": "return", "direction": "out", "comment": "return flow"}, {"source_id": "B3_op_1", "source_type": "operation", "destination_id": "B3_op_2", "destination_type": "operation", "signal_name": "i", "direction": "internal", "comment": "operand flow"}, {"source_id": "B3_op_1", "source_type": "operation", "destination_id": "B3_op_3", "destination_type": "operation", "signal_name": "i", "direction": "internal", "comment": "operand flow"}, {"source_id": "B3_op_3", "source_type": "operation", "destination_id": "B3_op_4", "destination_type": "operation", "signal_name": "j", "direction": "internal", "comment": "operand flow"}, {"source_id": "B3_op_7", "source_type": "operation", "destination_id": "B3_op_8", "destination_type": "operation", "signal_name": "tmp_8", "direction": "internal", "comment": "store flow"}, {"source_id": "B3_op_6", "source_type": "operation", "destination_id": "B3_op_9", "destination_type": "operation", "signal_name": "t", "direction": "internal", "comment": "store flow"}, {"source_id": "B3_op_3", "source_type": "operation", "destination_id": "B3_op_10", "destination_type": "operation", "signal_name": "j", "direction": "internal", "comment": "operand flow"}, {"source_id": "B3_op_1", "source_type": "operation", "destination_id": "B3_op_11", "destination_type": "operation", "signal_name": "i", "direction": "internal", "comment": "operand flow"}, {"source_id": "B3_op_12", "source_type": "operation", "destination_id": "B3", "destination_type": "block", "signal_name": "return", "direction": "out", "comment": "return flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B4_op_1", "destination_type": "operation", "signal_name": "width", "direction": "internal", "comment": "operand flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B4_op_2", "destination_type": "operation", "signal_name": "height", "direction": "internal", "comment": "operand flow"}, {"source_id": "B4_op_3", "source_type": "operation", "destination_id": "B4", "destination_type": "block", "signal_name": "return", "direction": "out", "comment": "return flow"}, {"source_id": "B5", "source_type": "block", "destination_id": "B5_op_1", "destination_type": "operation", "signal_name": "y", "direction": "internal", "comment": "operand flow"}, {"source_id": "B5_op_1", "source_type": "operation", "destination_id": "B5_op_2", "destination_type": "operation", "signal_name": "tmp_2", "direction": "internal", "comment": "operand flow"}, {"source_id": "B5", "source_type": "block", "destination_id": "B5_op_3", "destination_type": "operation", "signal_name": "x", "direction": "internal", "comment": "operand flow"}, {"source_id": "B5_op_3", "source_type": "operation", "destination_id": "B5_op_4", "destination_type": "operation", "signal_name": "tmp_4", "direction": "internal", "comment": "operand flow"}, {"source_id": "B5_op_2", "source_type": "operation", "destination_id": "B5_op_5", "destination_type": "operation", "signal_name": "tmp_3", "direction": "internal", "comment": "operand flow"}, {"source_id": "B5_op_4", "source_type": "operation", "destination_id": "B5_op_5", "destination_type": "operation", "signal_name": "tmp_5", "direction": "internal", "comment": "operand flow"}, {"source_id": "B5", "source_type": "block", "destination_id": "B5_op_6", "destination_type": "operation", "signal_name": "y", "direction": "internal", "comment": "operand flow"}, {"source_id": "B5_op_6", "source_type": "operation", "destination_id": "B5_op_7", "destination_type": "operation", "signal_name": "tmp_7", "direction": "internal", "comment": "operand flow"}, {"source_id": "B5", "source_type": "block", "destination_id": "B5_op_8", "destination_type": "operation", "signal_name": "x", "direction": "internal", "comment": "operand flow"}, {"source_id": "B5_op_8", "source_type": "operation", "destination_id": "B5_op_9", "destination_type": "operation", "signal_name": "tmp_9", "direction": "internal", "comment": "operand flow"}, {"source_id": "B5_op_7", "source_type": "operation", "destination_id": "B5_op_10", "destination_type": "operation", "signal_name": "tmp_8", "direction": "internal", "comment": "operand flow"}, {"source_id": "B5_op_9", "source_type": "operation", "destination_id": "B5_op_10", "destination_type": "operation", "signal_name": "tmp_10", "direction": "internal", "comment": "operand flow"}, {"source_id": "B5_op_5", "source_type": "operation", "destination_id": "B5_op_11", "destination_type": "operation", "signal_name": "tmp_6", "direction": "internal", "comment": "operand flow"}, {"source_id": "B5_op_10", "source_type": "operation", "destination_id": "B5_op_11", "destination_type": "operation", "signal_name": "tmp_11", "direction": "internal", "comment": "operand flow"}, {"source_id": "B5_op_11", "source_type": "operation", "destination_id": "B5", "destination_type": "block", "signal_name": "return", "direction": "out", "comment": "return flow"}, {"source_id": "B6", "source_type": "block", "destination_id": "B6_op_1", "destination_type": "operation", "signal_name": "y", "direction": "internal", "comment": "operand flow"}, {"source_id": "B6_op_1", "source_type": "operation", "destination_id": "B6_op_2", "destination_type": "operation", "signal_name": "tmp_2", "direction": "internal", "comment": "operand flow"}, {"source_id": "B6", "source_type": "block", "destination_id": "B6_op_3", "destination_type": "operation", "signal_name": "x", "direction": "internal", "comment": "operand flow"}, {"source_id": "B6_op_3", "source_type": "operation", "destination_id": "B6_op_4", "destination_type": "operation", "signal_name": "tmp_4", "direction": "internal", "comment": "operand flow"}, {"source_id": "B6_op_2", "source_type": "operation", "destination_id": "B6_op_5", "destination_type": "operation", "signal_name": "tmp_3", "direction": "internal", "comment": "operand flow"}, {"source_id": "B6_op_4", "source_type": "operation", "destination_id": "B6_op_5", "destination_type": "operation", "signal_name": "tmp_5", "direction": "internal", "comment": "operand flow"}, {"source_id": "B6_op_5", "source_type": "operation", "destination_id": "B6", "destination_type": "block", "signal_name": "return", "direction": "out", "comment": "return flow"}, {"source_id": "B7", "source_type": "block", "destination_id": "B7_op_1", "destination_type": "operation", "signal_name": "y", "direction": "internal", "comment": "operand flow"}, {"source_id": "B7_op_1", "source_type": "operation", "destination_id": "B7_op_2", "destination_type": "operation", "signal_name": "tmp_2", "direction": "internal", "comment": "operand flow"}, {"source_id": "B7", "source_type": "block", "destination_id": "B7_op_3", "destination_type": "operation", "signal_name": "x", "direction": "internal", "comment": "operand flow"}, {"source_id": "B7_op_3", "source_type": "operation", "destination_id": "B7_op_4", "destination_type": "operation", "signal_name": "tmp_4", "direction": "internal", "comment": "operand flow"}, {"source_id": "B7_op_2", "source_type": "operation", "destination_id": "B7_op_5", "destination_type": "operation", "signal_name": "tmp_3", "direction": "internal", "comment": "operand flow"}, {"source_id": "B7_op_4", "source_type": "operation", "destination_id": "B7_op_5", "destination_type": "operation", "signal_name": "tmp_5", "direction": "internal", "comment": "operand flow"}, {"source_id": "B7_op_5", "source_type": "operation", "destination_id": "B7", "destination_type": "block", "signal_name": "return", "direction": "out", "comment": "return flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_1", "destination_type": "operation", "signal_name": "y", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_2", "destination_type": "operation", "signal_name": "width", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_2", "destination_type": "operation", "signal_name": "height", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_3", "destination_type": "operation", "signal_name": "width", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_3", "destination_type": "operation", "signal_name": "height", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_4", "destination_type": "operation", "signal_name": "y", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_5", "destination_type": "operation", "signal_name": "width", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_5", "destination_type": "operation", "signal_name": "height", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_6", "destination_type": "operation", "signal_name": "width", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_6", "destination_type": "operation", "signal_name": "height", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_7", "destination_type": "operation", "signal_name": "height", "direction": "internal", "comment": "copy flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_8", "destination_type": "operation", "signal_name": "width", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_8", "destination_type": "operation", "signal_name": "height", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_9", "destination_type": "operation", "signal_name": "y", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_10", "destination_type": "operation", "signal_name": "width", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_10", "destination_type": "operation", "signal_name": "height", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_11", "destination_type": "operation", "signal_name": "width", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_11", "destination_type": "operation", "signal_name": "height", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_12", "destination_type": "operation", "signal_name": "y", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_13", "destination_type": "operation", "signal_name": "width", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_13", "destination_type": "operation", "signal_name": "height", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8_op_13", "source_type": "operation", "destination_id": "B8_op_14", "destination_type": "operation", "signal_name": "p8", "direction": "internal", "comment": "copy flow"}, {"source_id": "B8_op_7", "source_type": "operation", "destination_id": "B8_op_15", "destination_type": "operation", "signal_name": "p4", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8_op_14", "source_type": "operation", "destination_id": "B8_op_15", "destination_type": "operation", "signal_name": "med", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8_op_15", "source_type": "operation", "destination_id": "B8_op_16", "destination_type": "operation", "signal_name": "diff", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B8_op_16", "destination_type": "operation", "signal_name": "threshold", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8_op_16", "source_type": "operation", "destination_id": "B8_op_17", "destination_type": "operation", "signal_name": "tmp_17", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8_op_14", "source_type": "operation", "destination_id": "B8_op_17", "destination_type": "operation", "signal_name": "med", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8_op_7", "source_type": "operation", "destination_id": "B8_op_17", "destination_type": "operation", "signal_name": "p4", "direction": "internal", "comment": "operand flow"}, {"source_id": "B8_op_18", "source_type": "operation", "destination_id": "B8", "destination_type": "block", "signal_name": "return", "direction": "out", "comment": "return flow"}, {"source_id": "B9_op_2", "source_type": "operation", "destination_id": "B9_op_3", "destination_type": "operation", "signal_name": "y", "direction": "internal", "comment": "operand flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B9_op_3", "destination_type": "operation", "signal_name": "height", "direction": "internal", "comment": "operand flow"}, {"source_id": "B9_op_4", "source_type": "operation", "destination_id": "B9_op_5", "destination_type": "operation", "signal_name": "x", "direction": "internal", "comment": "operand flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B9_op_5", "destination_type": "operation", "signal_name": "width", "direction": "internal", "comment": "operand flow"}, {"source_id": "B9_op_4", "source_type": "operation", "destination_id": "B9_op_6", "destination_type": "operation", "signal_name": "x", "direction": "internal", "comment": "operand flow"}, {"source_id": "B9_op_2", "source_type": "operation", "destination_id": "B9_op_6", "destination_type": "operation", "signal_name": "y", "direction": "internal", "comment": "operand flow"}, {"source_id": "B9_op_4", "source_type": "operation", "destination_id": "B9_op_7", "destination_type": "operation", "signal_name": "x", "direction": "internal", "comment": "operand flow"}, {"source_id": "B9_op_2", "source_type": "operation", "destination_id": "B9_op_7", "destination_type": "operation", "signal_name": "y", "direction": "internal", "comment": "operand flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B9_op_8", "destination_type": "operation", "signal_name": "threshold", "direction": "internal", "comment": "store flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B9_op_9", "destination_type": "operation", "signal_name": "height", "direction": "internal", "comment": "store flow"}, {"source_id": "B9_op_4", "source_type": "operation", "destination_id": "B9_op_10", "destination_type": "operation", "signal_name": "x", "direction": "internal", "comment": "operand flow"}, {"source_id": "B9_op_2", "source_type": "operation", "destination_id": "B9_op_11", "destination_type": "operation", "signal_name": "y", "direction": "internal", "comment": "operand flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B1", "destination_type": "block", "signal_name": "x", "direction": "in", "comment": "argument flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B1", "destination_type": "block", "signal_name": "0", "direction": "in", "comment": "argument flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B1", "destination_type": "block", "signal_name": "width - 1", "direction": "in", "comment": "argument flow"}, {"source_id": "B1", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "cx", "direction": "out", "comment": "return flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B1", "destination_type": "block", "signal_name": "y", "direction": "in", "comment": "argument flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B1", "destination_type": "block", "signal_name": "0", "direction": "in", "comment": "argument flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B1", "destination_type": "block", "signal_name": "height - 1", "direction": "in", "comment": "argument flow"}, {"source_id": "B1", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "cy", "direction": "out", "comment": "return flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "raw", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "x - 1", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "y - 1", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "width", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "height", "direction": "in", "comment": "argument flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "p0", "direction": "out", "comment": "return flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "raw", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "x", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "y - 1", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "width", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "height", "direction": "in", "comment": "argument flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "p1", "direction": "out", "comment": "return flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "raw", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "x + 1", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "y - 1", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "width", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "height", "direction": "in", "comment": "argument flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "p2", "direction": "out", "comment": "return flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "raw", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "x - 1", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "y", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "width", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "height", "direction": "in", "comment": "argument flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "p3", "direction": "out", "comment": "return flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "raw", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "x", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "y", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "width", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "height", "direction": "in", "comment": "argument flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "p4", "direction": "out", "comment": "return flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "raw", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "x + 1", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "y", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "width", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "height", "direction": "in", "comment": "argument flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "p5", "direction": "out", "comment": "return flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "raw", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "x - 1", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "y + 1", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "width", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "height", "direction": "in", "comment": "argument flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "p6", "direction": "out", "comment": "return flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "raw", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "x", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "y + 1", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "width", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "height", "direction": "in", "comment": "argument flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "p7", "direction": "out", "comment": "return flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "raw", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "x + 1", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "y + 1", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "width", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "height", "direction": "in", "comment": "argument flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "p8", "direction": "out", "comment": "return flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B3", "destination_type": "block", "signal_name": "p0", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B3", "destination_type": "block", "signal_name": "p1", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B3", "destination_type": "block", "signal_name": "p2", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B3", "destination_type": "block", "signal_name": "p3", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B3", "destination_type": "block", "signal_name": "p4", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B3", "destination_type": "block", "signal_name": "p5", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B3", "destination_type": "block", "signal_name": "p6", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B3", "destination_type": "block", "signal_name": "p7", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B3", "destination_type": "block", "signal_name": "p8", "direction": "in", "comment": "argument flow"}, {"source_id": "B3", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "med", "direction": "out", "comment": "return flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B2", "destination_type": "block", "signal_name": "p4 - med", "direction": "in", "comment": "argument flow"}, {"source_id": "B2", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "diff", "direction": "out", "comment": "return flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B1", "destination_type": "block", "signal_name": "fixed", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B1", "destination_type": "block", "signal_name": "0", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B1", "destination_type": "block", "signal_name": "4095", "direction": "in", "comment": "argument flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B5", "destination_type": "block", "signal_name": "x", "direction": "in", "comment": "argument flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B5", "destination_type": "block", "signal_name": "y", "direction": "in", "comment": "argument flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B6", "destination_type": "block", "signal_name": "x", "direction": "in", "comment": "argument flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B6", "destination_type": "block", "signal_name": "y", "direction": "in", "comment": "argument flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B7", "destination_type": "block", "signal_name": "x", "direction": "in", "comment": "argument flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B7", "destination_type": "block", "signal_name": "y", "direction": "in", "comment": "argument flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "raw", "direction": "in", "comment": "argument flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "x", "direction": "in", "comment": "argument flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "y", "direction": "in", "comment": "argument flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "width", "direction": "in", "comment": "argument flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "height", "direction": "in", "comment": "argument flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B8", "destination_type": "block", "signal_name": "threshold", "direction": "in", "comment": "argument flow"}, {"source_id": "B8", "source_type": "block", "destination_id": "B9", "destination_type": "block", "signal_name": "out[(y * width) + x]", "direction": "out", "comment": "return flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "raw", "direction": "in", "comment": "argument flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "x", "direction": "in", "comment": "argument flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "y", "direction": "in", "comment": "argument flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "width", "direction": "in", "comment": "argument flow"}, {"source_id": "B9", "source_type": "block", "destination_id": "B4", "destination_type": "block", "signal_name": "height", "direction": "in", "comment": "argument flow"}, {"source_id": "B4", "source_type": "block", "destination_id": "B9", "destination_type": "block", "signal_name": "out[(y * width) + x]", "direction": "out", "comment": "return flow"}], "flow": {"execution_order": ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10"], "parallelism": "sequential", "call_graph": {"nodes": {"clamp_int": {"function_name": "clamp_int", "block_id": "B1", "callers": ["get_pixel", "get_pixel", "bpc_pixel"], "callees": [], "call_depth": 0, "is_recursive": false, "self_cycles": 1, "total_cycles": 1}, "abs_int": {"function_name": "abs_int", "block_id": "B2", "callers": ["bpc_pixel"], "callees": [], "call_depth": 0, "is_recursive": false, "self_cycles": 2, "total_cycles": 2}, "median9": {"function_name": "median9", "block_id": "B3", "callers": ["bpc_pixel"], "callees": [], "call_depth": 0, "is_recursive": false, "self_cycles": 5, "total_cycles": 5}, "get_pixel": {"function_name": "get_pixel", "block_id": "B4", "callers": ["bpc_pixel", "bpc_pixel", "bpc_pixel", "bpc_pixel", "bpc_pixel", "bpc_pixel", "bpc_pixel", "bpc_pixel", "bpc_pixel", "bpc_grbg_3x3"], "callees": ["clamp_int", "clamp_int"], "call_depth": 0, "is_recursive": false, "self_cycles": 2, "total_cycles": 4}, "is_green": {"function_name": "is_green", "block_id": "B5", "callers": ["bpc_grbg_3x3"], "callees": [], "call_depth": 0, "is_recursive": false, "self_cycles": 3, "total_cycles": 3}, "is_red": {"function_name": "is_red", "block_id": "B6", "callers": ["bpc_grbg_3x3"], "callees": [], "call_depth": 0, "is_recursive": false, "self_cycles": 3, "total_cycles": 3}, "is_blue": {"function_name": "is_blue", "block_id": "B7", "callers": ["bpc_grbg_3x3"], "callees": [], "call_depth": 0, "is_recursive": false, "self_cycles": 3, "total_cycles": 3}, "bpc_pixel": {"function_name": "bpc_pixel", "block_id": "B8", "callers": ["bpc_grbg_3x3"], "callees": ["get_pixel", "get_pixel", "get_pixel", "get_pixel", "get_pixel", "get_pixel", "get_pixel", "get_pixel", "get_pixel", "median9", "abs_int", "clamp_int"], "call_depth": 0, "is_recursive": false, "self_cycles": 8, "total_cycles": 52}, "bpc_grbg_3x3": {"function_name": "bpc_grbg_3x3", "block_id": "B9", "callers": [], "callees": ["is_green", "is_red", "is_blue", "bpc_pixel", "get_pixel"], "call_depth": 0, "is_recursive": false, "self_cycles": 5, "total_cycles": 70}, "main": {"function_name": "main", "block_id": "B10", "callers": [], "callees": [], "call_depth": 0, "is_recursive": false, "self_cycles": 1, "total_cycles": 1}}, "entry_functions": ["bpc_grbg_3x3", "main"], "call_chains": [["bpc_grbg_3x3", "bpc_pixel", "median9"], ["main"]], "critical_path": ["bpc_grbg_3x3", "bpc_pixel", "median9"], "max_depth": 0, "has_recursion": false, "analysis_confidence": "medium", "analysis_coverage": 0.9, "analysis_limitations": ["AST parse failed; regex fallback used"]}, "call_sequence": [{"function": "clamp_int", "calls": []}, {"function": "abs_int", "calls": []}, {"function": "median9", "calls": []}, {"function": "get_pixel", "calls": [{"callee": "clamp_int", "args": ["x", "0", "width - 1"], "assigned": "cx", "callee_params": ["value", "lo", "hi"]}, {"callee": "clamp_int", "args": ["y", "0", "height - 1"], "assigned": "cy", "callee_params": ["value", "lo", "hi"]}]}, {"function": "is_green", "calls": []}, {"function": "is_red", "calls": []}, {"function": "is_blue", "calls": []}, {"function": "bpc_pixel", "calls": [{"callee": "get_pixel", "args": ["raw", "x - 1", "y - 1", "width", "height"], "assigned": "p0", "callee_params": ["raw", "x", "y", "width", "height"]}, {"callee": "get_pixel", "args": ["raw", "x", "y - 1", "width", "height"], "assigned": "p1", "callee_params": ["raw", "x", "y", "width", "height"]}, {"callee": "get_pixel", "args": ["raw", "x + 1", "y - 1", "width", "height"], "assigned": "p2", "callee_params": ["raw", "x", "y", "width", "height"]}, {"callee": "get_pixel", "args": ["raw", "x - 1", "y", "width", "height"], "assigned": "p3", "callee_params": ["raw", "x", "y", "width", "height"]}, {"callee": "get_pixel", "args": ["raw", "x", "y", "width", "height"], "assigned": "p4", "callee_params": ["raw", "x", "y", "width", "height"]}, {"callee": "get_pixel", "args": ["raw", "x + 1", "y", "width", "height"], "assigned": "p5", "callee_params": ["raw", "x", "y", "width", "height"]}, {"callee": "get_pixel", "args": ["raw", "x - 1", "y + 1", "width", "height"], "assigned": "p6", "callee_params": ["raw", "x", "y", "width", "height"]}, {"callee": "get_pixel", "args": ["raw", "x", "y + 1", "width", "height"], "assigned": "p7", "callee_params": ["raw", "x", "y", "width", "height"]}, {"callee": "get_pixel", "args": ["raw", "x + 1", "y + 1", "width", "height"], "assigned": "p8", "callee_params": ["raw", "x", "y", "width", "height"]}, {"callee": "median9", "args": ["p0", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"], "assigned": "med", "callee_params": ["v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8"]}, {"callee": "abs_int", "args": ["p4 - med"], "assigned": "diff", "callee_params": ["x"]}, {"callee": "clamp_int", "args": ["fixed", "0", "4095"], "assigned": null, "callee_params": ["value", "lo", "hi"]}]}, {"function": "bpc_grbg_3x3", "calls": [{"callee": "is_green", "args": ["x", "y"], "assigned": null, "callee_params": ["x", "y"]}, {"callee": "is_red", "args": ["x", "y"], "assigned": null, "callee_params": ["x", "y"]}, {"callee": "is_blue", "args": ["x", "y"], "assigned": null, "callee_params": ["x", "y"]}, {"callee": "bpc_pixel", "args": ["raw", "x", "y", "width", "height", "threshold"], "assigned": "out[(y * width) + x]", "callee_params": ["raw", "x", "y", "width", "height", "threshold"]}, {"callee": "get_pixel", "args": ["raw", "x", "y", "width", "height"], "assigned": "out[(y * width) + x]", "callee_params": ["raw", "x", "y", "width", "height"]}]}, {"function": "main", "calls": []}], "function_defs": {"clamp_int": {"file": "test_examples.c"}, "abs_int": {"file": "test_examples.c"}, "median9": {"file": "test_examples.c"}, "get_pixel": {"file": "test_examples.c"}, "is_green": {"file": "test_examples.c"}, "is_red": {"file": "test_examples.c"}, "is_blue": {"file": "test_examples.c"}, "bpc_pixel": {"file": "test_examples.c"}, "bpc_grbg_3x3": {"file": "test_examples.c"}, "main": {"file": "test_examples.c"}}, "unresolved_calls": [{"caller": "main", "callee": "add_values", "source_file": "test_examples.c"}], "external_symbols": [{"function": "bpc_pixel", "name": "uint16_t", "kind": "external", "resolved": false}, {"function": "main", "name": "add_values", "kind": "external", "resolved": false}]}, "diagram_hint": {"layout": "TBD by drawing tool"}, "note": "Enhanced with P1+P2: complete data flow, CFG, call graph", "analysis_version": "2.0", "project_mode": false, "duplicate_functions": []};
+  const DEFAULT_FUNCTION_IO = {"clamp_int": {"reads": ["hi", "lo", "value"], "writes": []}, "abs_int": {"reads": ["x"], "writes": []}, "median9": {"reads": ["v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8"], "writes": []}, "get_pixel": {"reads": ["height", "raw", "width", "x", "y"], "writes": []}, "is_green": {"reads": ["x", "y"], "writes": []}, "is_red": {"reads": ["x", "y"], "writes": []}, "is_blue": {"reads": ["x", "y"], "writes": []}, "bpc_pixel": {"reads": ["height", "raw", "threshold", "width", "x", "y"], "writes": []}, "bpc_grbg_3x3": {"reads": ["height", "out", "raw", "threshold", "width"], "writes": ["out"]}};
+
+  const state = {
+    toggles: { showDataFlow: true, showExecution: false, showCallGraph: false },
+    selectedNodeId: null,
+    selectedEdgeKey: null,
+    viewTransform: { x: 0, y: 0, k: 1 },
+    initialTransform: { x: 0, y: 0, k: 1 },
+    anomalies: [],
+    activeTab: "diagram",
+    sequenceZoom: 1,
+    sequenceMap: {},
+    sequenceGroupMap: {},
+    functionIO: {},
+    functionIOSource: "none"
+  };
+
+  function addAnomaly(kind, message, details) {
+    state.anomalies.push({ kind, message, details });
+  }
+
+  function updateIOSourceStatus(state) {
+    const el = document.getElementById("ioStatus");
+    if (!el) return;
+    el.textContent = `IO: ${state.functionIOSource || "none"}`;
+  }
+
+  function applySequenceZoom(state) {
+    const content = document.getElementById("sequence-content");
+    if (!content) return;
+    const z = Math.max(0.5, Math.min(2.5, state.sequenceZoom || 1));
+    state.sequenceZoom = z;
+    content.style.transform = `scale(${z})`;
+  }
+
+  function parseData(raw) {
+    const data = Object.assign({}, raw);
+    data.blocks = Array.isArray(data.blocks) ? data.blocks : [];
+    data.signals = Array.isArray(data.signals) ? data.signals : [];
+    data.flow = data.flow || {};
+    data.flow.execution_order = Array.isArray(data.flow.execution_order) ? data.flow.execution_order : [];
+    data.flow.call_graph = data.flow.call_graph || {};
+    return data;
+  }
+
+  function computeNodeSize(node) {
+    const baseWidth = 180;
+    const charWidth = 7;
+    const lineHeight = 16;
+    const lines = [node.title].concat(node.bodyLines);
+    const maxLen = Math.max.apply(null, lines.map(line => line.length));
+    const width = Math.max(baseWidth, Math.min(360, maxLen * charWidth + 40));
+    const height = 20 + lines.length * lineHeight + 12;
+    return { width, height };
+  }
+
+  function buildNodes(data) {
+    return data.blocks.map(block => {
+      const inputs = Array.isArray(block.inputs) ? block.inputs.join(", ") : "";
+      const outputs = Array.isArray(block.outputs) ? block.outputs.join(", ") : "";
+      const cycles = block.estimated_cycles != null ? String(block.estimated_cycles) : "n/a";
+      const badges = [];
+      if (block.cfg && block.cfg.has_branches) badges.push("⚡ branch");
+      if (block.cfg && Array.isArray(block.cfg.loops) && block.cfg.loops.length) badges.push("🔁 loop");
+      const blockId = block.block_id || "unknown";
+      const blockName = block.block_name || "unnamed";
+      const node = {
+        id: blockId,
+        title: `${blockName} (${blockId})`,
+        bodyLines: [
+          `inputs: ${inputs || "-"}`,
+          `outputs: ${outputs || "-"}`,
+          `cycles: ${cycles}`
+        ].concat(badges.length ? [`badges: ${badges.join(", ")}`] : []),
+        data: block
+      };
+      const size = computeNodeSize(node);
+      return {
+        id: node.id,
+        width: size.width,
+        height: size.height,
+        data: node
+      };
+    });
+  }
+
+  function mergeParallelEdges(edges) {
+    const map = new Map();
+    edges.forEach(edge => {
+      const key = `${edge.source_id}::${edge.destination_id}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          source_id: edge.source_id,
+          destination_id: edge.destination_id,
+          labels_merged: [],
+          original_signals: []
+        });
+      }
+      const item = map.get(key);
+      item.labels_merged.push(edge.label);
+      item.original_signals.push(edge.original);
+    });
+    return Array.from(map.values()).map(item => {
+      const labelCount = item.labels_merged.length;
+      const label_display = labelCount > 4 ? `${labelCount} labels` : item.labels_merged.join(", ");
+      return Object.assign(item, { label_display });
+    });
+  }
+
+  function buildEdges(data, toggles) {
+    const blockIds = new Set(data.blocks.map(block => block.block_id));
+    const dataEdgesRaw = [];
+
+    if (toggles.showDataFlow) {
+      data.signals.forEach(signal => {
+        if (signal.source_type !== "block" || signal.destination_type !== "block") return;
+        if (!blockIds.has(signal.source_id) || !blockIds.has(signal.destination_id)) {
+          addAnomaly("warn", "Signal references missing block", signal);
+          return;
+        }
+        dataEdgesRaw.push({
+          source_id: signal.source_id,
+          destination_id: signal.destination_id,
+          label: signal.signal_name || "signal",
+          original: signal
+        });
+      });
+    }
+
+    const mergedDataEdges = mergeParallelEdges(dataEdgesRaw).map((edge, index) => ({
+      id: `data_${index}_${edge.source_id}_${edge.destination_id}`,
+      sources: [edge.source_id],
+      targets: [edge.destination_id],
+      labels: [{ text: edge.label_display }],
+      data: Object.assign({ type: "data" }, edge)
+    }));
+
+    const execEdges = [];
+    if (toggles.showExecution && Array.isArray(data.flow.execution_order)) {
+      const order = data.flow.execution_order;
+      for (let i = 0; i < order.length - 1; i += 1) {
+        const from = order[i];
+        const to = order[i + 1];
+        if (!blockIds.has(from) || !blockIds.has(to)) {
+          addAnomaly("warn", "execution_order references missing block", { from, to });
+          continue;
+        }
+        execEdges.push({
+          id: `exec_${i}_${from}_${to}`,
+          sources: [from],
+          targets: [to],
+          labels: [{ text: "exec" }],
+          data: { type: "exec", from, to }
+        });
+      }
+    }
+
+    const callEdges = [];
+    if (toggles.showCallGraph && data.flow.call_graph && data.flow.call_graph.nodes) {
+      const nodes = data.flow.call_graph.nodes;
+      const functionToBlock = {};
+      Object.keys(nodes).forEach(name => {
+        if (nodes[name] && nodes[name].block_id) functionToBlock[name] = nodes[name].block_id;
+      });
+
+      Object.keys(nodes).forEach(name => {
+        const callerBlock = functionToBlock[name];
+        if (!callerBlock) return;
+        const callees = Array.isArray(nodes[name].callees) ? nodes[name].callees : [];
+        callees.forEach(calleeName => {
+          const calleeBlock = functionToBlock[calleeName];
+          if (!calleeBlock) {
+            addAnomaly("warn", "call_graph mapping failed", { caller: name, callee: calleeName });
+            return;
+          }
+          if (!blockIds.has(callerBlock) || !blockIds.has(calleeBlock)) {
+            addAnomaly("warn", "call_graph references missing block", { callerBlock, calleeBlock });
+            return;
+          }
+          callEdges.push({
+            id: `call_${name}_${calleeName}`,
+            sources: [callerBlock],
+            targets: [calleeBlock],
+            labels: [{ text: "call" }],
+            data: { type: "call", caller: name, callee: calleeName }
+          });
+        });
+      });
+    }
+
+    return mergedDataEdges.concat(execEdges, callEdges);
+  }
+
+  function layoutWithELK(nodes, edges, elkOptions) {
+    const elk = new ELK();
+    const graph = {
+      id: "root",
+      layoutOptions: elkOptions,
+      children: nodes,
+      edges: edges
+    };
+    return elk.layout(graph);
+  }
+
+  function renderSVG(layout, svgEl) {
+    const nodes = layout.children || [];
+    const edges = layout.edges || [];
+
+    let minX = 0;
+    let minY = 0;
+    let maxX = 0;
+    let maxY = 0;
+
+    function trackPoint(x, y) {
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+
+    nodes.forEach(node => {
+      trackPoint(node.x, node.y);
+      trackPoint(node.x + node.width, node.y + node.height);
+    });
+
+    edges.forEach(edge => {
+      (edge.sections || []).forEach(section => {
+        trackPoint(section.startPoint.x, section.startPoint.y);
+        (section.bendPoints || []).forEach(bp => trackPoint(bp.x, bp.y));
+        trackPoint(section.endPoint.x, section.endPoint.y);
+      });
+    });
+
+    const padding = 40;
+    const viewBox = [
+      minX - padding,
+      minY - padding,
+      (maxX - minX) + padding * 2,
+      (maxY - minY) + padding * 2
+    ].join(" ");
+
+    const edgeParts = edges.map(edge => {
+      const sections = edge.sections || [];
+      if (!sections.length) return "";
+      const section = sections[0];
+      const points = [section.startPoint]
+        .concat(section.bendPoints || [])
+        .concat([section.endPoint]);
+      const polyline = points.map(p => `${p.x},${p.y}`).join(" ");
+      const edgeType = edge.data && edge.data.type ? edge.data.type : "data";
+      const className = edgeType === "exec" ? "edge-line exec" : edgeType === "call" ? "edge-line call" : "edge-line";
+      const label = edge.labels && edge.labels[0] ? edge.labels[0].text : "";
+      const midPoint = points[Math.floor(points.length / 2)];
+      return `
+        <g class="edge-group" data-edge-id="${edge.id}">
+          <polyline class="${className}" points="${polyline}" />
+          <text class="edge-label" x="${midPoint.x + 6}" y="${midPoint.y - 6}">${label}</text>
+        </g>`;
+      // TODO: add edge label toggle if needed.
+    }).join("");
+
+    const nodeParts = nodes.map(node => {
+      const data = node.data || {};
+      const lines = [data.title].concat(data.bodyLines || []);
+      const textLines = lines.map((line, idx) => {
+        const y = node.y + 24 + idx * 16;
+        const className = idx === 0 ? "node-title" : "node-line";
+        return `<text class="${className}" x="${node.x + 12}" y="${y}">${line}</text>`;
+      }).join("");
+      const loopClass = data.data && data.data.cfg && Array.isArray(data.data.cfg.loops) && data.data.cfg.loops.length ? "loop" : "";
+      return `
+        <g class="node-group" data-node-id="${node.id}">
+          <rect class="node-box ${loopClass}" x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}"></rect>
+          ${textLines}
+        </g>`;
+    }).join("");
+
+    svgEl.setAttribute("viewBox", viewBox);
+    svgEl.innerHTML = `
+      <g id="viewport" transform="translate(${state.viewTransform.x}, ${state.viewTransform.y}) scale(${state.viewTransform.k})">
+        ${edgeParts}
+        ${nodeParts}
+      </g>`;
+  }
+
+  function applySearchHighlight(state, query) {
+    const svg = document.getElementById("diagramSvg");
+    const nodeGroups = svg.querySelectorAll(".node-group");
+    const q = query.trim().toLowerCase();
+    nodeGroups.forEach(group => {
+      const id = group.getAttribute("data-node-id");
+      const block = state.blockMap[id];
+      const name = block && block.block_name ? block.block_name.toLowerCase() : "";
+      if (!q) {
+        group.classList.remove("highlight");
+      } else if ((id && id.toLowerCase().includes(q)) || name.includes(q)) {
+        group.classList.add("highlight");
+      } else {
+        group.classList.remove("highlight");
+      }
+    });
+  }
+
+  function bindUI(state) {
+    const svg = document.getElementById("diagramSvg");
+    const detailPanel = document.getElementById("detail-json");
+    const searchInput = document.getElementById("searchInput");
+    const toggleData = document.getElementById("toggleData");
+    const toggleExec = document.getElementById("toggleExec");
+    const toggleCall = document.getElementById("toggleCall");
+    const resetBtn = document.getElementById("resetBtn");
+    const tabDiagram = document.getElementById("tabDiagram");
+    const tabSequence = document.getElementById("tabSequence");
+    const seqZoomOut = document.getElementById("seqZoomOut");
+    const seqZoomReset = document.getElementById("seqZoomReset");
+    const seqZoomIn = document.getElementById("seqZoomIn");
+    const diagramPanel = document.getElementById("diagram-panel");
+    const sequencePanel = document.getElementById("sequence-panel");
+    const seqLoad = document.getElementById("seqLoad");
+    const seqExport = document.getElementById("seqExport");
+    const seqFile = document.getElementById("seqFile");
+    const ioLoad = document.getElementById("ioLoad");
+    const ioFile = document.getElementById("ioFile");
+
+    searchInput.addEventListener("input", event => {
+      applySearchHighlight(state, event.target.value);
+    });
+
+    function rerender() {
+      state.anomalies = [];
+      const edges = buildEdges(state.data, state.toggles);
+      layoutWithELK(state.nodes, edges, state.elkOptions).then(layout => {
+        state.layout = layout;
+        renderSVG(layout, svg);
+        applySearchHighlight(state, searchInput.value);
+        updateAnomalies(state);
+      });
+    }
+
+    toggleData.addEventListener("change", () => {
+      state.toggles.showDataFlow = toggleData.checked;
+      rerender();
+    });
+    toggleExec.addEventListener("change", () => {
+      state.toggles.showExecution = toggleExec.checked;
+      rerender();
+    });
+    toggleCall.addEventListener("change", () => {
+      state.toggles.showCallGraph = toggleCall.checked;
+      rerender();
+    });
+
+    resetBtn.addEventListener("click", () => {
+      state.viewTransform = Object.assign({}, state.initialTransform);
+      if (state.layout) renderSVG(state.layout, svg);
+    });
+
+    function setTab(next) {
+      state.activeTab = next;
+      if (next === "diagram") {
+        diagramPanel.hidden = false;
+        sequencePanel.hidden = true;
+        tabDiagram.classList.add("active");
+        tabSequence.classList.remove("active");
+      } else {
+        diagramPanel.hidden = true;
+        sequencePanel.hidden = false;
+        tabSequence.classList.add("active");
+        tabDiagram.classList.remove("active");
+        requestAnimationFrame(() => {
+          const board = document.querySelector("#sequence-content .seq-board");
+          if (board) drawSequenceGroupEdges(board, state.data);
+        });
+      }
+    }
+
+    tabDiagram.addEventListener("click", () => setTab("diagram"));
+    tabSequence.addEventListener("click", () => setTab("sequence"));
+
+    seqZoomOut.addEventListener("click", () => {
+      state.sequenceZoom = (state.sequenceZoom || 1) / 1.15;
+      applySequenceZoom(state);
+      const board = document.querySelector("#sequence-content .seq-board");
+      if (board) requestAnimationFrame(() => drawSequenceGroupEdges(board, state.data));
+    });
+    seqZoomReset.addEventListener("click", () => {
+      state.sequenceZoom = 1;
+      applySequenceZoom(state);
+      const board = document.querySelector("#sequence-content .seq-board");
+      if (board) requestAnimationFrame(() => drawSequenceGroupEdges(board, state.data));
+    });
+    seqZoomIn.addEventListener("click", () => {
+      state.sequenceZoom = (state.sequenceZoom || 1) * 1.15;
+      applySequenceZoom(state);
+      const board = document.querySelector("#sequence-content .seq-board");
+      if (board) requestAnimationFrame(() => drawSequenceGroupEdges(board, state.data));
+    });
+
+    sequencePanel.addEventListener("wheel", event => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      const factor = event.deltaY < 0 ? 1.1 : 0.9;
+      state.sequenceZoom = (state.sequenceZoom || 1) * factor;
+      applySequenceZoom(state);
+      const board = document.querySelector("#sequence-content .seq-board");
+      if (board) requestAnimationFrame(() => drawSequenceGroupEdges(board, state.data));
+    }, { passive: false });
+
+    window.addEventListener("resize", () => {
+      const board = document.querySelector("#sequence-content .seq-board");
+      if (board) requestAnimationFrame(() => drawSequenceGroupEdges(board, state.data));
+    });
+
+    seqLoad.addEventListener("click", () => seqFile.click());
+    seqFile.addEventListener("change", event => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          state.sequenceMap = (data && data.nodes) ? data.nodes : {};
+          state.sequenceGroupMap = (data && data.groups) ? data.groups : {};
+          renderSequence(state);
+        } catch (err) {
+          alert("Failed to load map: " + err);
+        }
+      };
+      reader.readAsText(file);
+      seqFile.value = "";
+    });
+
+    seqExport.addEventListener("click", () => {
+      const payload = JSON.stringify({
+        version: 2,
+        nodes: state.sequenceMap,
+        groups: state.sequenceGroupMap
+      }, null, 2);
+      const blob = new Blob([payload], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "custom_map.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    ioLoad.addEventListener("click", () => ioFile.click());
+    ioFile.addEventListener("change", event => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          state.functionIO = data || {};
+          state.functionIOSource = "loaded from file";
+          updateIOSourceStatus(state);
+          renderSequence(state);
+        } catch (err) {
+          alert("Failed to load IO map: " + err);
+        }
+      };
+      reader.readAsText(file);
+      ioFile.value = "";
+    });
+
+    let isPanning = false;
+    let start = { x: 0, y: 0 };
+
+    svg.addEventListener("mousedown", event => {
+      if (event.button !== 0) return;
+      isPanning = true;
+      start = { x: event.clientX - state.viewTransform.x, y: event.clientY - state.viewTransform.y };
+    });
+    window.addEventListener("mousemove", event => {
+      if (!isPanning) return;
+      state.viewTransform.x = event.clientX - start.x;
+      state.viewTransform.y = event.clientY - start.y;
+      if (state.layout) renderSVG(state.layout, svg);
+    });
+    window.addEventListener("mouseup", () => {
+      isPanning = false;
+    });
+
+    svg.addEventListener("wheel", event => {
+      event.preventDefault();
+      const delta = -event.deltaY;
+      const zoomFactor = delta > 0 ? 1.1 : 0.9;
+      const next = Math.min(3.5, Math.max(0.25, state.viewTransform.k * zoomFactor));
+      state.viewTransform.k = next;
+      if (state.layout) renderSVG(state.layout, svg);
+    }, { passive: false });
+
+    svg.addEventListener("click", event => {
+      const nodeGroup = event.target.closest(".node-group");
+      const edgeGroup = event.target.closest(".edge-group");
+      if (nodeGroup) {
+        const nodeId = nodeGroup.getAttribute("data-node-id");
+        state.selectedNodeId = nodeId;
+        state.selectedEdgeKey = null;
+        const block = state.blockMap[nodeId];
+        detailPanel.textContent = JSON.stringify(block || { error: "Node not found" }, null, 2);
+        return;
+      }
+      if (edgeGroup) {
+        const edgeId = edgeGroup.getAttribute("data-edge-id");
+        state.selectedEdgeKey = edgeId;
+        state.selectedNodeId = null;
+        const edge = (state.layout.edges || []).find(item => item.id === edgeId);
+        detailPanel.textContent = JSON.stringify(edge && edge.data ? edge.data : { error: "Edge not found" }, null, 2);
+      }
+    });
+
+    rerender();
+  }
+
+  function updateAnomalies(state) {
+    const panel = document.getElementById("anomaly-list");
+    const list = document.getElementById("anomaly-items");
+    list.innerHTML = "";
+    if (!state.anomalies.length) {
+      panel.hidden = true;
+      return;
+    }
+    state.anomalies.forEach(anomaly => {
+      const li = document.createElement("li");
+      li.textContent = `${anomaly.kind.toUpperCase()}: ${anomaly.message}`;
+      list.appendChild(li);
+    });
+    panel.hidden = false;
+  }
+
+  function init() {
+    const data = parseData(DATA);
+    const nodes = buildNodes(data);
+    const blockMap = {};
+    data.blocks.forEach(block => {
+      blockMap[block.block_id] = block;
+    });
+
+    const elkOptions = {
+      "elk.algorithm": "layered",
+      "elk.direction": "RIGHT",
+      "elk.spacing.nodeNode": "50",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "80",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "40"
+    };
+
+    state.data = data;
+    state.nodes = nodes;
+    state.blockMap = blockMap;
+    state.elkOptions = elkOptions;
+    state.functionIO = (DEFAULT_FUNCTION_IO && typeof DEFAULT_FUNCTION_IO === "object") ? DEFAULT_FUNCTION_IO : {};
+    state.functionIOSource = Object.keys(state.functionIO).length ? "embedded" : "none";
+    updateIOSourceStatus(state);
+
+    renderSequence(state);
+    bindUI(state);
+    // Optional fetch-based override for workflows that keep function_io.json outside the embedded build.
+    autoLoadFunctionIO(state);
+  }
+
+  async function autoLoadFunctionIO(state) {
+    const candidates = ["./function_io.json", "../function_io.json"];
+    for (const path of candidates) {
+      try {
+        const resp = await fetch(path, { cache: "no-store" });
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        if (data && typeof data === "object") {
+          state.functionIO = data;
+          state.functionIOSource = `auto-loaded (${path})`;
+          updateIOSourceStatus(state);
+          renderSequence(state);
+          return;
+        }
+      } catch (err) {
+        // Ignore and try next candidate.
+      }
+    }
+  }
+
+  function renderSequence(state) {
+    const container = document.getElementById("sequence-content");
+    const seq = (state.data.flow && state.data.flow.call_sequence) ? state.data.flow.call_sequence : [];
+    if (!seq.length) {
+      container.textContent = "No call sequence data available.";
+      return;
+    }
+
+    container.innerHTML = "";
+    const board = document.createElement("div");
+    board.className = "seq-board";
+
+    const groupByName = new Map();
+    seq.forEach(group => groupByName.set(group.function, group));
+
+    const order = buildFunctionOrder(state.data, seq);
+    order.forEach(name => {
+      const group = groupByName.get(name);
+      if (!group) return;
+      const calls = group.calls || [];
+      const groupEl = document.createElement("div");
+      groupEl.className = "seq-group";
+      groupEl.dataset.function = group.function;
+      applyGroupTransform(groupEl, state, group.function);
+      const title = document.createElement("div");
+      title.className = "seq-title";
+      title.textContent = group.function;
+      groupEl.appendChild(title);
+
+      const canvas = document.createElement("div");
+      canvas.className = "seq-canvas";
+      canvas.dataset.function = group.function;
+
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("class", "seq-svg");
+      svg.innerHTML = `
+        <defs>
+          <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#9ca3af"></path>
+          </marker>
+        </defs>
+      `;
+      canvas.appendChild(svg);
+
+      const layout = buildSequenceLayout(group.function, calls, state.functionIO);
+      const nodes = layout.nodes;
+      const edges = layout.edges;
+      canvas._seqEdges = edges;
+
+      // Compute canvas size
+      const width = Math.max(220, (layout.maxLayer + 1) * 150 + 40);
+      const height = Math.max(64, (layout.maxRow + 1) * 58 + 28);
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
+      svg.setAttribute("width", String(width));
+      svg.setAttribute("height", String(height));
+
+      nodes.forEach(node => {
+        const el = document.createElement("div");
+        el.className = "seq-node";
+        el.dataset.nodeId = node.id;
+        el.dataset.function = group.function;
+        el.textContent = node.label;
+        el.style.left = node.x + "px";
+        el.style.top = node.y + "px";
+        attachDrag(el, svg, edges, state);
+        canvas.appendChild(el);
+      });
+
+      drawSequenceEdges(svg, edges);
+      groupEl.appendChild(canvas);
+      board.appendChild(groupEl);
+      attachGroupDrag(groupEl, board, state);
+    });
+
+    // Append any remaining functions not covered by the call graph order
+    seq.forEach(group => {
+      if (order.indexOf(group.function) !== -1) return;
+      const calls = group.calls || [];
+      const groupEl = document.createElement("div");
+      groupEl.className = "seq-group";
+      groupEl.dataset.function = group.function;
+      applyGroupTransform(groupEl, state, group.function);
+      const title = document.createElement("div");
+      title.className = "seq-title";
+      title.textContent = group.function;
+      groupEl.appendChild(title);
+
+      const canvas = document.createElement("div");
+      canvas.className = "seq-canvas";
+      canvas.dataset.function = group.function;
+
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("class", "seq-svg");
+      svg.innerHTML = `
+        <defs>
+          <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#9ca3af"></path>
+          </marker>
+        </defs>
+      `;
+      canvas.appendChild(svg);
+
+      const layout = buildSequenceLayout(group.function, calls, state.functionIO);
+      const nodes = layout.nodes;
+      const edges = layout.edges;
+      canvas._seqEdges = edges;
+
+      const width = Math.max(220, (layout.maxLayer + 1) * 150 + 40);
+      const height = Math.max(64, (layout.maxRow + 1) * 58 + 28);
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
+      svg.setAttribute("width", String(width));
+      svg.setAttribute("height", String(height));
+
+      nodes.forEach(node => {
+        const el = document.createElement("div");
+        el.className = "seq-node";
+        el.dataset.nodeId = node.id;
+        el.dataset.function = group.function;
+        el.textContent = node.label;
+        el.style.left = node.x + "px";
+        el.style.top = node.y + "px";
+        attachDrag(el, svg, edges, state);
+        canvas.appendChild(el);
+      });
+
+      drawSequenceEdges(svg, edges);
+      groupEl.appendChild(canvas);
+      board.appendChild(groupEl);
+      attachGroupDrag(groupEl, board, state);
+    });
+
+    container.appendChild(board);
+    applySequenceZoom(state);
+    requestAnimationFrame(() => {
+      board.querySelectorAll(".seq-svg").forEach(svg => {
+        const canvas = svg.parentElement;
+        const edges = canvas && canvas._seqEdges ? canvas._seqEdges : [];
+        drawSequenceEdges(svg, edges);
+      });
+      drawSequenceGroupEdges(board, state.data);
+    });
+  }
+
+  function buildFunctionOrder(data, seq) {
+    const order = [];
+    const visited = new Set();
+    const callGraph = data.flow && data.flow.call_graph ? data.flow.call_graph : null;
+    const entry = callGraph && callGraph.entry_functions ? callGraph.entry_functions : [];
+    const seqMap = new Map();
+    seq.forEach(group => seqMap.set(group.function, group));
+
+    function dfs(funcName) {
+      if (visited.has(funcName)) return;
+      visited.add(funcName);
+      order.push(funcName);
+      const group = seqMap.get(funcName);
+      if (!group || !group.calls) return;
+      group.calls.forEach(call => dfs(call.callee));
+    }
+
+    entry.forEach(name => dfs(name));
+    seq.forEach(group => {
+      if (!visited.has(group.function)) {
+        order.push(group.function);
+        visited.add(group.function);
+      }
+    });
+    return order;
+  }
+
+  function drawSequenceGroupEdges(board, data) {
+    const old = board.querySelector(".seq-board-overlay");
+    if (old) old.remove();
+
+    const groupEls = Array.from(board.querySelectorAll(".seq-group"));
+    if (!groupEls.length) return;
+
+    const overlay = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    overlay.setAttribute("class", "seq-board-overlay");
+    overlay.setAttribute("width", String(Math.ceil(board.scrollWidth || board.clientWidth || 0)));
+    overlay.setAttribute("height", String(Math.ceil(board.scrollHeight || board.clientHeight || 0)));
+    overlay.innerHTML = `
+      <defs>
+        <marker id="group-arrowhead" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8"></path>
+        </marker>
+      </defs>
+    `;
+    board.insertBefore(overlay, board.firstChild);
+
+    const boardRect = board.getBoundingClientRect();
+    const groupMap = new Map();
+    groupEls.forEach(el => {
+      const fn = el.dataset.function;
+      if (!fn) return;
+      groupMap.set(fn, el);
+    });
+
+    const callGraph = data && data.flow ? data.flow.call_graph : null;
+    const drawn = new Set();
+    if (callGraph && callGraph.nodes) {
+      Object.keys(callGraph.nodes).forEach(caller => {
+        const node = callGraph.nodes[caller];
+        const callerEl = groupMap.get(caller);
+        if (!callerEl || !node || !Array.isArray(node.callees)) return;
+        node.callees.forEach(callee => {
+          const calleeEl = groupMap.get(callee);
+          if (!calleeEl) return;
+          const key = `${caller}->${callee}`;
+          if (drawn.has(key)) return;
+          drawn.add(key);
+          appendGroupEdgePath(overlay, boardRect, callerEl, calleeEl);
+        });
+      });
+    }
+
+    // Fallback: connect neighbors if call graph data is absent.
+    if (!drawn.size && groupEls.length > 1) {
+      for (let i = 0; i < groupEls.length - 1; i += 1) {
+        appendGroupEdgePath(overlay, boardRect, groupEls[i], groupEls[i + 1]);
+      }
+    }
+  }
+
+  function appendGroupEdgePath(svg, boardRect, fromEl, toEl) {
+    const zoom = state.sequenceZoom || 1;
+    const fromRect = fromEl.getBoundingClientRect();
+    const toRect = toEl.getBoundingClientRect();
+    const x1 = ((fromRect.right - boardRect.left) / zoom);
+    const y1 = (((fromRect.top + fromRect.height / 2) - boardRect.top) / zoom);
+    const x2 = ((toRect.left - boardRect.left) / zoom);
+    const y2 = (((toRect.top + toRect.height / 2) - boardRect.top) / zoom);
+    const dx = Math.max(40, Math.abs(x2 - x1) * 0.45);
+
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("class", "seq-group-edge");
+    path.setAttribute("d", `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`);
+    svg.appendChild(path);
+  }
+
+  function applyGroupTransform(groupEl, state, functionName) {
+    const saved = state.sequenceGroupMap && state.sequenceGroupMap[functionName];
+    const tx = saved && typeof saved.x === "number" ? saved.x : 0;
+    const ty = saved && typeof saved.y === "number" ? saved.y : 0;
+    groupEl.dataset.tx = String(tx);
+    groupEl.dataset.ty = String(ty);
+    groupEl.style.transform = `translate(${tx}px, ${ty}px)`;
+    groupEl.style.cursor = "grab";
+  }
+
+  function buildSequenceLayout(functionName, calls, functionIO) {
+    const nodes = [];
+    const edges = [];
+
+    const assignInfo = calls.map((call, index) => {
+      return {
+        index,
+        callee: call.callee,
+        args: call.args || [],
+        assigned: call.assigned || null,
+        calleeParams: call.callee_params || []
+      };
+    });
+
+    const deps = new Map();
+    assignInfo.forEach(call => deps.set(call.index, []));
+
+    const keywords = new Set(["if", "for", "while", "return", "sizeof", "int", "float", "double", "char", "void"]);
+    const extractIdentifiers = (text) => {
+      if (!text) return [];
+      const matches = text.match(/[A-Za-z_]\w*/g) || [];
+      return matches.filter(token => !keywords.has(token));
+    };
+    const toSet = (items) => new Set(items);
+    const mergeSets = (a, b) => new Set([...a, ...b]);
+
+    const ioFor = (name) => (functionIO && functionIO[name]) ? functionIO[name] : null;
+    const readWriteForCall = (call) => {
+      const io = ioFor(call.callee);
+      let reads = [];
+      let writes = [];
+      if (io && Array.isArray(io.reads) && Array.isArray(io.writes)) {
+        io.reads.forEach(param => {
+          const idx = call.calleeParams.indexOf(param);
+          if (idx >= 0 && call.args[idx] != null) {
+            reads = reads.concat(extractIdentifiers(call.args[idx]));
+          }
+        });
+        io.writes.forEach(param => {
+          const idx = call.calleeParams.indexOf(param);
+          if (idx >= 0 && call.args[idx] != null) {
+            writes = writes.concat(extractIdentifiers(call.args[idx]));
+          }
+        });
+      } else {
+        call.args.forEach(arg => {
+          reads = reads.concat(extractIdentifiers(arg));
+        });
+      }
+      if (call.assigned) {
+        writes = writes.concat(extractIdentifiers(call.assigned));
+      }
+      return { readSet: toSet(reads), writeSet: toSet(writes) };
+    };
+
+    for (let i = 0; i < assignInfo.length; i += 1) {
+      const src = assignInfo[i];
+      for (let j = i + 1; j < assignInfo.length; j += 1) {
+        const dst = assignInfo[j];
+        const srcRW = readWriteForCall(src);
+        const dstRW = readWriteForCall(dst);
+        const raw = intersects(srcRW.writeSet, mergeSets(dstRW.readSet, dstRW.writeSet));
+        const war = intersects(srcRW.readSet, dstRW.writeSet);
+        if (raw || war) {
+          deps.get(dst.index).push(src.index);
+        }
+      }
+    }
+
+    const layerByIndex = new Map();
+    let maxLayer = 0;
+    assignInfo.forEach(call => {
+      const incoming = deps.get(call.index) || [];
+      let layer = 0;
+      if (incoming.length) {
+        layer = Math.max(...incoming.map(idx => layerByIndex.get(idx) || 0)) + 1;
+      }
+      layerByIndex.set(call.index, layer);
+      maxLayer = Math.max(maxLayer, layer);
+    });
+
+    const rowByLayer = new Map();
+    let maxRow = 0;
+    assignInfo.forEach(call => {
+      const layer = layerByIndex.get(call.index) || 0;
+      const row = rowByLayer.get(layer) || 0;
+      rowByLayer.set(layer, row + 1);
+      maxRow = Math.max(maxRow, row);
+
+      const id = `${functionName}::${call.index}::${call.callee}`;
+      const mapKey = `${functionName}::${id}`;
+      const saved = state.sequenceMap[mapKey];
+      const x = saved && typeof saved.x === "number" ? saved.x : (layer * 150 + 26);
+      const y = saved && typeof saved.y === "number" ? saved.y : (row * 58 + 18);
+
+      nodes.push({
+        id,
+        label: call.callee,
+        index: call.index,
+        layer,
+        row,
+        x,
+        y
+      });
+    });
+
+    assignInfo.forEach(call => {
+      const incoming = deps.get(call.index) || [];
+      incoming.forEach(srcIdx => {
+        edges.push({
+          from: `${functionName}::${srcIdx}::${assignInfo[srcIdx].callee}`,
+          to: `${functionName}::${call.index}::${call.callee}`
+        });
+      });
+    });
+
+    return {
+      nodes,
+      edges,
+      maxLayer,
+      maxRow
+    };
+  }
+
+  function intersects(a, b) {
+    for (const item of a) {
+      if (b.has(item)) return true;
+    }
+    return false;
+  }
+
+  function drawSequenceEdges(svg, edges) {
+    const canvas = svg.parentElement;
+    if (!canvas) return;
+    const zoom = state.sequenceZoom || 1;
+    const svgRect = svg.getBoundingClientRect();
+    const nodeEls = Array.from(canvas.querySelectorAll(".seq-node"));
+    const nodeMap = new Map();
+    nodeEls.forEach(el => {
+      const r = el.getBoundingClientRect();
+      nodeMap.set(el.dataset.nodeId, {
+        x: (r.left - svgRect.left) / zoom,
+        y: (r.top - svgRect.top) / zoom,
+        w: r.width / zoom,
+        h: r.height / zoom
+      });
+    });
+    const existing = svg.querySelectorAll("path.seq-edge");
+    existing.forEach(el => el.remove());
+
+    edges.forEach(edge => {
+      const from = nodeMap.get(edge.from);
+      const to = nodeMap.get(edge.to);
+      if (!from || !to) return;
+      const x1 = from.x + from.w;
+      const y1 = from.y + from.h / 2;
+      const x2 = to.x;
+      const y2 = to.y + to.h / 2;
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      const midX = (x1 + x2) / 2;
+      path.setAttribute("d", `M${x1},${y1} C${midX},${y1} ${midX},${y2} ${x2},${y2}`);
+      path.setAttribute("class", "seq-edge");
+      svg.appendChild(path);
+    });
+  }
+
+  function attachDrag(nodeEl, svg, edges, state) {
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let originX = 0;
+    let originY = 0;
+
+    nodeEl.addEventListener("pointerdown", event => {
+      dragging = true;
+      nodeEl.setPointerCapture(event.pointerId);
+      startX = event.clientX;
+      startY = event.clientY;
+      originX = parseFloat(nodeEl.style.left || "0");
+      originY = parseFloat(nodeEl.style.top || "0");
+      nodeEl.style.cursor = "grabbing";
+    });
+
+    nodeEl.addEventListener("pointermove", event => {
+      if (!dragging) return;
+      const zoom = state.sequenceZoom || 1;
+      const dx = (event.clientX - startX) / zoom;
+      const dy = (event.clientY - startY) / zoom;
+      const nextX = originX + dx;
+      const nextY = originY + dy;
+      nodeEl.style.left = `${nextX}px`;
+      nodeEl.style.top = `${nextY}px`;
+
+      const key = `${nodeEl.dataset.function}::${nodeEl.dataset.nodeId}`;
+      state.sequenceMap[key] = { x: nextX, y: nextY };
+
+      drawSequenceEdges(svg, edges);
+    });
+
+    nodeEl.addEventListener("pointerup", event => {
+      dragging = false;
+      nodeEl.releasePointerCapture(event.pointerId);
+      nodeEl.style.cursor = "grab";
+    });
+  }
+
+  function attachGroupDrag(groupEl, board, state) {
+    let dragging = false;
+    let pointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let originX = 0;
+    let originY = 0;
+
+    groupEl.addEventListener("pointerdown", event => {
+      if (event.button !== 0) return;
+      if (event.target.closest(".seq-node")) return;
+      dragging = true;
+      pointerId = event.pointerId;
+      groupEl.setPointerCapture(pointerId);
+      startX = event.clientX;
+      startY = event.clientY;
+      originX = parseFloat(groupEl.dataset.tx || "0");
+      originY = parseFloat(groupEl.dataset.ty || "0");
+      groupEl.style.cursor = "grabbing";
+    });
+
+    groupEl.addEventListener("pointermove", event => {
+      if (!dragging) return;
+      const zoom = state.sequenceZoom || 1;
+      const tx = originX + (event.clientX - startX) / zoom;
+      const ty = originY + (event.clientY - startY) / zoom;
+      groupEl.dataset.tx = String(tx);
+      groupEl.dataset.ty = String(ty);
+      groupEl.style.transform = `translate(${tx}px, ${ty}px)`;
+      const fn = groupEl.dataset.function;
+      if (fn) state.sequenceGroupMap[fn] = { x: tx, y: ty };
+      drawSequenceGroupEdges(board, state.data);
+    });
+
+    groupEl.addEventListener("pointerup", event => {
+      if (!dragging) return;
+      dragging = false;
+      if (pointerId != null) groupEl.releasePointerCapture(pointerId);
+      pointerId = null;
+      groupEl.style.cursor = "grab";
+    });
+  }
+
+  if (typeof ELK === "undefined") {
+    document.getElementById("detail-json").textContent = "ELK.js bundle not loaded. Place ./assets/elk.bundled.js next to this HTML file.";
+  } else {
+    init();
+  }
+  </script>
+</body>
+</html>

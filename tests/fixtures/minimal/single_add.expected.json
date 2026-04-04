@@ -19,11 +19,9 @@
     }
   ],
   "call_graph": {
-    "analysis_confidence": "low",
-    "analysis_coverage": 0.0,
-    "analysis_limitations": [
-      "AST parse failed; regex fallback used"
-    ],
+    "analysis_confidence": "high",
+    "analysis_coverage": 1.0,
+    "analysis_limitations": [],
     "call_chains": [
       [
         "add_one"

@@ -7,7 +7,13 @@ import tempfile
 from pathlib import Path
 
 def run_cvas(input_c: Path, output_json: Path) -> None:
-    cmd = [sys.executable, str(Path(__file__).resolve().parents[1] / "src" / "cvas_mvp.py"), str(input_c), "-o", str(output_json)]
+    cmd = [
+        sys.executable,
+        str(Path(__file__).resolve().parents[1] / "src" / "cvas_cli.py"),
+        str(input_c),
+        "-o",
+        str(output_json),
+    ]
     result = subprocess.run(cmd, check=False, capture_output=True, text=True)
     if result.returncode != 0:
         sys.stdout.write(result.stdout)
