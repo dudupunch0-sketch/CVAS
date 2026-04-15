@@ -4,6 +4,8 @@ import importlib
 import importlib.util
 import re
 
+from cvas_clang import strip_cvas_markers
+
 
 def load_pycparser():
     """Return pycparser module if available, else None."""
@@ -19,6 +21,7 @@ def _blank_preserving_newlines(text: str) -> str:
 
 def normalize_c_source(source: str) -> str:
     """Normalize C source for parsing while preserving line numbers."""
+    source = strip_cvas_markers(source)
     lines = []
     for line in source.splitlines(keepends=True):
         if line.lstrip().startswith("#"):

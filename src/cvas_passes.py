@@ -5,6 +5,11 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
 from c_ast_utils import parse_statement
+from cvas_analysis import AnalysisOptions
+from cvas_clang import (
+    extract_condition_with_clang,
+    extract_for_condition_with_clang,
+)
 from cvas_cfg import analyze_control_flow, detect_control_notes
 from cvas_callgraph import find_function_calls
 from cvas_expr import (
@@ -179,8 +184,21 @@ def normalize_compound_operators(statement: str) -> str:
     return statement
 
 
-def extract_keyword_condition(statement: str, keyword: str) -> Optional[str]:
+def extract_keyword_condition(
+    statement: str,
+    keyword: str,
+    analysis_options: AnalysisOptions = AnalysisOptions(),
+) -> Optional[str]:
     """Extract a condition expression from a keyword statement."""
+    if analysis_options.mode == "full":
+        condition = extract_condition_with_clang(
+            statement,
+            keyword,
+            clang_args=analysis_options.clang_args,
+        )
+        if condition is not None:
+            return condition
+
     parsed = parse_statement(statement)
     if parsed:
         pycparser_module, node, generator = parsed
@@ -201,8 +219,17 @@ def extract_keyword_condition(statement: str, keyword: str) -> Optional[str]:
     return extract_parenthesized_content(statement, open_index)
 
 
-def extract_for_condition(statement: str) -> Optional[str]:
+def extract_for_condition(
+    statement: str, analysis_options: AnalysisOptions = AnalysisOptions()
+) -> Optional[str]:
     """Extract the condition expression from a for loop statement."""
+    if analysis_options.mode == "full":
+        condition = extract_for_condition_with_clang(
+            statement, clang_args=analysis_options.clang_args
+        )
+        if condition is not None:
+            return condition
+
     parsed = parse_statement(statement)
     if parsed:
         pycparser_module, node, generator = parsed
@@ -344,7 +371,11 @@ def handle_simple_assignment(
 
 
 def extract_operations(
-    body: str, block_id: str, block_inputs: List[str], has_return: bool
+    body: str,
+    block_id: str,
+    block_inputs: List[str],
+    has_return: bool,
+    analysis_options: AnalysisOptions = AnalysisOptions(),
 ) -> Tuple[List[Operation], List[Signal], OpSummary]:
     """Extract operations from a function body."""
     cleaned = strip_comments_and_strings(body)
@@ -477,7 +508,7 @@ def extract_operations(
                     )
             continue
 
-        for_condition = extract_for_condition(statement)
+        for_condition = extract_for_condition(statement, analysis_options=analysis_options)
         if for_condition is not None:
             output_name = f"cond_{condition_counter}"
             condition_counter += 1
@@ -493,7 +524,11 @@ def extract_operations(
             continue
 
         for keyword in ("if", "while"):
-            condition_expr = extract_keyword_condition(statement, keyword)
+            condition_expr = extract_keyword_condition(
+                statement,
+                keyword,
+                analysis_options=analysis_options,
+            )
             if condition_expr is not None:
                 output_name = f"cond_{condition_counter}"
                 condition_counter += 1
@@ -561,13 +596,18 @@ def analyze_function(
     known_functions: Set[str],
     symbol_index: Dict[str, Dict[str, object]],
     rules: CycleRules,
+    analysis_options: AnalysisOptions = AnalysisOptions(),
 ) -> FunctionAnalysisResult:
     """Analyze a single function into a block, operations, and metadata."""
     inputs = parse_params(params)
     outputs = [] if ret_type.strip() == "void" else ["return"]
 
     block_operations, op_edges, summary = extract_operations(
-        body, block_id, inputs, bool(outputs)
+        body,
+        block_id,
+        inputs,
+        bool(outputs),
+        analysis_options=analysis_options,
     )
     cycles = estimate_cycles(summary, rules)
 
@@ -633,7 +673,11 @@ def analyze_function(
             }
         )
 
-    calls, _ = find_function_calls(body, known_functions)
+    calls, _ = find_function_calls(
+        body,
+        known_functions,
+        analysis_options=analysis_options,
+    )
 
     return FunctionAnalysisResult(
         name=name,

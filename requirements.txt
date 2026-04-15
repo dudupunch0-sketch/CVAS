@@ -1,0 +1,13 @@
+# CVAS dependency manifest.
+#
+# Fast analysis mode uses only the Python standard library, so no extra pip
+# packages are required for the default runtime.
+#
+# Install this file with pip to get the Python-side dependencies used by
+# development/test workflows and the optional full analysis backend.
+#
+# Development/test dependency:
+pytest
+#
+# Optional full-analysis dependency:
+clang

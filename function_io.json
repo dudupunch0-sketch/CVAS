@@ -13,6 +13,53 @@
     ],
     "writes": []
   },
+  "sum3": {
+    "reads": [
+      "a",
+      "b",
+      "c"
+    ],
+    "writes": []
+  },
+  "avg3_round": {
+    "reads": [
+      "a",
+      "b",
+      "c"
+    ],
+    "writes": []
+  },
+  "directional_energy": {
+    "reads": [
+      "a",
+      "b",
+      "c"
+    ],
+    "writes": []
+  },
+  "weighted_blend": {
+    "reads": [
+      "a",
+      "b",
+      "shift",
+      "wa",
+      "wb"
+    ],
+    "writes": []
+  },
+  "select_directional_predictor": {
+    "reads": [
+      "pred_d0",
+      "pred_d1",
+      "pred_h",
+      "pred_v",
+      "score_d0",
+      "score_d1",
+      "score_h",
+      "score_v"
+    ],
+    "writes": []
+  },
   "median9": {
     "reads": [
       "v0",
@@ -55,6 +102,53 @@
     "reads": [
       "x",
       "y"
+    ],
+    "writes": []
+  },
+  "edge_aware_predict": {
+    "reads": [
+      "p0",
+      "p1",
+      "p2",
+      "p3",
+      "p4",
+      "p5",
+      "p6",
+      "p7",
+      "p8"
+    ],
+    "writes": []
+  },
+  "ring_activity": {
+    "reads": [
+      "p0",
+      "p1",
+      "p2",
+      "p3",
+      "p4",
+      "p5",
+      "p6",
+      "p7",
+      "p8"
+    ],
+    "writes": []
+  },
+  "adaptive_threshold": {
+    "reads": [
+      "activity",
+      "base_threshold",
+      "center",
+      "edge_pred",
+      "median"
+    ],
+    "writes": []
+  },
+  "refine_candidate": {
+    "reads": [
+      "center",
+      "edge_pred",
+      "median",
+      "threshold"
     ],
     "writes": []
   },
