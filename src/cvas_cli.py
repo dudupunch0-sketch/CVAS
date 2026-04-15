@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from cvas_analysis import AnalysisOptions
+from cvas_clang import ClangUnavailableError, ensure_clang_available
 from cvas_model import CycleRules
 from cvas_pipeline import build_model
 from cvas_index import collect_project_sources
@@ -24,6 +26,7 @@ Examples:
   %(prog)s model.c -o output.json
   %(prog)s model.c --cycle-config cycle.json
   %(prog)s model.c --add-per-cycle 8 --mul-per-cycle 2
+  %(prog)s model.c --analysis-mode full --clang-arg=-Iinclude
         """,
     )
 
@@ -76,6 +79,18 @@ Examples:
         "--source-extensions",
         default="c,cc,cpp,h,hpp",
         help="Comma-separated extensions to index in project mode",
+    )
+    parser.add_argument(
+        "--analysis-mode",
+        choices=["fast", "full"],
+        default="fast",
+        help="Select lightweight parsing or clang-backed full analysis",
+    )
+    parser.add_argument(
+        "--clang-arg",
+        action="append",
+        default=[],
+        help="Additional clang argument used only in full analysis mode",
     )
 
     return parser.parse_args()
@@ -164,23 +179,47 @@ def _load_project_sources(
     return collect_project_sources(resolved_root, extensions, resolved_entry)
 
 
+def _load_analysis_options(args: argparse.Namespace) -> AnalysisOptions:
+    options = AnalysisOptions.from_values(
+        mode=args.analysis_mode,
+        clang_args=args.clang_arg,
+    )
+    if options.mode == "full":
+        try:
+            ensure_clang_available()
+        except ClangUnavailableError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
+    return options
+
+
 def main() -> None:
     """Main CLI entry point."""
     args = parse_args()
     rules = _load_cycle_rules(args)
+    analysis_options = _load_analysis_options(args)
     entry_file, source = _load_source(args)
     project_sources = _load_project_sources(args, entry_file)
 
     if project_sources:
         print(
-            f"Building enhanced model with project indexing ({len(project_sources)} files)...",
+            f"Building enhanced model with {analysis_options.backend} backend "
+            f"and project indexing ({len(project_sources)} files)...",
             file=sys.stderr,
         )
     else:
-        print("Building enhanced model with P1+P2 analysis...", file=sys.stderr)
+        print(
+            f"Building enhanced model with P1+P2 analysis "
+            f"({analysis_options.backend} backend)...",
+            file=sys.stderr,
+        )
 
     model = build_model(
-        source, rules, project_sources=project_sources, entry_file=entry_file
+        source,
+        rules,
+        project_sources=project_sources,
+        entry_file=entry_file,
+        analysis_options=analysis_options,
     )
     output = json.dumps(model, indent=2, ensure_ascii=False)
 

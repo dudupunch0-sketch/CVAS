@@ -23,10 +23,12 @@ Run commands from the repository root unless noted otherwise.
 
 - `python src/cvas_cli.py model.c -o output.json`: parse the CVAS region and emit JSON
 - `python src/cvas_mvp.py model.c -o output.json`: compatibility entrypoint for the same analysis path
+- `python src/cvas_cli.py model.c --analysis-mode fast -o output.json`: explicitly use the default `pycparser` analysis backend
+- `python src/cvas_cli.py model.c --analysis-mode full --clang-arg=-Iinclude -o output.json`: use the `clang`-backed full analysis path with extra compile flags when needed
 - `python json_to_html.py output.json output.html`: convert JSON to a standalone HTML viewer
 - `python cvas_wrapper.py test_examples.c docs/test_examples_output.html --output-json docs/test_examples_output.json`: refresh the checked-in sample HTML/JSON artifacts
 - `python -m py_compile src/cvas_mvp.py src/cvas_cli.py src/cvas_pipeline.py src/cvas_passes.py json_to_html.py tools/generate_function_io.py`: quick syntax check
-- `pytest -q`: run regression tests when `pytest` is available in the environment
+- `../.venv/bin/python -m pytest -q`: run regression tests from `CVAS/` using the workspace-local virtualenv at `/home/dudupunch0/company/cvas/.venv`
 - `python tools/generate_function_io.py test_examples.c --llm-provider none`: generate the rule-based `function_io.json`
 - `python tools/generate_function_io.py test_examples.c --llm-provider codex-cli --codex-danger-full-access --codex-timeout-sec 60`: run the Codex-assisted function IO refinement path
 
@@ -36,7 +38,7 @@ Use 4-space indentation and descriptive snake_case names. Keep new code ASCII un
 
 ## Testing Guidelines
 
-Tests use `pytest` and snapshot-style fixture comparisons in `tests/test_regression.py`. Keep fixture pairs aligned (`*.c` + `*.expected.json`). When viewer behavior changes, refresh the checked-in sample output in `docs/` and manually verify the Diagram and Sequence tabs.
+Tests use `pytest` and snapshot-style fixture comparisons in `tests/test_regression.py`. Prefer the workspace-local virtualenv at `/home/dudupunch0/company/cvas/.venv` when running from `CVAS/`, which means using `../.venv/bin/python`, so the dependency is present even if the base shell image lacks `pytest`. Keep fixture pairs aligned (`*.c` + `*.expected.json`). When viewer behavior changes, refresh the checked-in sample output in `docs/` and manually verify the Diagram and Sequence tabs.
 
 ## Commit & Pull Request Guidelines
 
@@ -44,4 +46,4 @@ Use concise imperative commit messages. When behavior changes, include the valid
 
 ## Agent Notes
 
-Prefer `src/cvas_cli.py` when testing the direct CLI path and keep `src/cvas_mvp.py` as a compatibility layer. Treat the Diagram tab as the primary operation-flow block diagram, and use CFG / Sequence / call graph views as supporting perspectives.
+Prefer `src/cvas_cli.py` when testing the direct CLI path and keep `src/cvas_mvp.py` as a compatibility layer. Use `--analysis-mode fast` for baseline regressions and `--analysis-mode full` only when `clang`/`libclang` is available. Treat the Diagram tab as the primary operation-flow block diagram, and use CFG / Sequence / call graph views as supporting perspectives.

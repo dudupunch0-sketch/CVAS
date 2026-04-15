@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
+from cvas_analysis import AnalysisOptions
 from cvas_source import (
     find_function_definitions,
     split_top_level_commas,
@@ -40,6 +41,7 @@ def collect_project_sources(
 
 def build_project_symbol_index(
     project_sources: List[Tuple[Path, str]],
+    analysis_options: AnalysisOptions = AnalysisOptions(),
 ) -> Tuple[
     Dict[str, Tuple[str, str, str, str, str]],
     List[Dict[str, object]],
@@ -52,7 +54,7 @@ def build_project_symbol_index(
 
     for path, source in project_sources:
         rel_path = str(path)
-        functions = find_function_definitions(source)
+        functions = find_function_definitions(source, analysis_options=analysis_options)
         for ret, name, params, body in functions:
             if name in function_defs:
                 duplicate_functions.append(

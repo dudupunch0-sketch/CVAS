@@ -5,15 +5,21 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pytest
 
 CVAS_PARSER = Path(__file__).resolve().parents[1] / "src" / "cvas_mvp.py"
+SRC_DIR = Path(__file__).resolve().parents[1] / "src"
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
-def run_cvas(input_c: Path, output_json: Path) -> Dict:
+
+def run_cvas(
+    input_c: Path, output_json: Path, extra_args: Optional[List[str]] = None
+) -> Dict:
     """Run CVAS parser and return the resulting model.
 
     Args:
@@ -33,6 +39,8 @@ def run_cvas(input_c: Path, output_json: Path) -> Dict:
         "-o",
         str(output_json),
     ]
+    if extra_args:
+        cmd.extend(extra_args)
 
     result = subprocess.run(
         cmd,
@@ -49,6 +57,15 @@ def run_cvas(input_c: Path, output_json: Path) -> Dict:
         )
 
     return json.loads(output_json.read_text(encoding="utf-8"))
+
+
+def require_clang() -> None:
+    from cvas_clang import ClangUnavailableError, ensure_clang_available
+
+    try:
+        ensure_clang_available()
+    except ClangUnavailableError as exc:
+        pytest.skip(str(exc))
 
 
 def build_snapshot(model: Dict) -> Dict:
@@ -177,4 +194,59 @@ def test_no_fixtures_found():
     assert len(fixtures) > 0, (
         f"No test fixtures found in {FIXTURES_DIR}. "
         "Expected files matching *.c with corresponding *.expected.json"
+    )
+
+
+def test_full_analysis_mode_reports_clang_backend():
+    require_clang()
+    fixture_c = FIXTURES_DIR / "minimal" / "single_add.c"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_path = Path(tmpdir) / "output.json"
+        model = run_cvas(
+            fixture_c,
+            output_path,
+            extra_args=["--analysis-mode", "full"],
+        )
+
+    assert model["analysis_mode"] == "full"
+    assert model["analysis_backend"] == "clang"
+    assert model["blocks"]
+
+
+def test_full_mode_preserves_cast_call_arguments():
+    require_clang()
+
+    from cvas_analysis import AnalysisOptions
+    from cvas_callgraph import find_function_calls
+
+    calls, metadata = find_function_calls(
+        "foo((Pixel)bar);",
+        ["foo"],
+        AnalysisOptions(mode="full"),
+    )
+
+    assert calls == [("foo", ["(Pixel)bar"], None)]
+    assert metadata["parser"] in {"ast", "clang", "text"}
+
+
+def test_full_mode_preserves_cast_conditions():
+    require_clang()
+
+    from cvas_analysis import AnalysisOptions
+    from cvas_passes import extract_for_condition, extract_keyword_condition
+
+    options = AnalysisOptions(mode="full")
+
+    assert (
+        extract_keyword_condition("if ((Pixel)bar) { baz(); }", "if", options)
+        == "(Pixel)bar"
+    )
+    assert (
+        extract_keyword_condition("while ((Pixel)bar) { baz(); }", "while", options)
+        == "(Pixel)bar"
+    )
+    assert (
+        extract_for_condition("for (i = 0; (Pixel)bar; ++i) { baz(); }", options)
+        == "(Pixel)bar"
     )

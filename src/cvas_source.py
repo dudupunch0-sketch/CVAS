@@ -5,6 +5,8 @@ import sys
 from typing import List, Optional, Tuple
 
 from c_ast_utils import parse_translation_unit
+from cvas_analysis import AnalysisOptions
+from cvas_clang import find_function_definitions_with_clang
 
 MARKER_START = "CVAS_START"
 MARKER_END = "CVAS_END"
@@ -193,8 +195,17 @@ def _find_function_definitions_regex(source: str) -> List[Tuple[str, str, str, s
     return functions
 
 
-def find_function_definitions(source: str) -> List[Tuple[str, str, str, str]]:
+def find_function_definitions(
+    source: str, analysis_options: AnalysisOptions = AnalysisOptions()
+) -> List[Tuple[str, str, str, str]]:
     """Find all function definitions in source code."""
+    if analysis_options.mode == "full":
+        functions = find_function_definitions_with_clang(
+            source, clang_args=analysis_options.clang_args
+        )
+        if functions:
+            return functions
+
     parsed = parse_translation_unit(source)
     if parsed is None:
         return _find_function_definitions_regex(source)
@@ -221,4 +232,3 @@ def find_function_definitions(source: str) -> List[Tuple[str, str, str, str]]:
         functions.append((ret, name, params, body))
 
     return functions
-

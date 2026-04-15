@@ -63,13 +63,27 @@ ISP 알고리즘 C-model 분석을 위한 고급 파서로, `CVAS_START` / `CVAS
 ## 📋 요구사항
 
 - Python 3.10 이상
-- 표준 라이브러리만 사용 (외부 의존성 없음)
+- 기본 `fast` 분석 런타임은 표준 라이브러리만 사용
+- 개발/테스트 환경은 `pytest` 필요
+- `--analysis-mode full` 사용 시: Python `clang` 바인딩 + 사용 가능한 `libclang`
+- 설치/가상환경/검증 명령은 [requirements.md](requirements.md) 참고
 
 ---
 
 ## 🚀 빠른 시작
 
 ### 기본 사용법
+
+환경 준비와 의존성 설치:
+
+```bash
+cd ..
+python -m venv .venv
+cd CVAS
+source ../.venv/bin/activate
+../.venv/bin/python -m pip install --upgrade pip
+pip install -r requirements-dev.txt
+```
 
 ```bash
 python src/cvas_cli.py model.c -o output.json
@@ -80,6 +94,28 @@ python src/cvas_cli.py model.c -o output.json
 ```bash
 python src/cvas_mvp.py model.c -o output.json
 ```
+
+기본값은 경량 `fast` 모드이며, 기존 `pycparser` 기반 분석을 사용합니다.
+
+```bash
+python src/cvas_cli.py model.c --analysis-mode fast -o output.json
+```
+
+보다 엄격한 정적 분석 경로가 필요하면 `clang` 기반 `full` 모드를 사용할 수 있습니다.
+
+```bash
+python src/cvas_cli.py model.c --analysis-mode full -o output.json
+python src/cvas_cli.py model.c --analysis-mode full --clang-arg=-Iinclude -o output.json
+```
+
+`full` 모드를 쓰려면 추가로 다음이 필요합니다.
+
+```bash
+source ../.venv/bin/activate
+pip install -r requirements-full.txt
+```
+
+그리고 시스템에 `libclang`이 설치되어 있어야 합니다. 자세한 예시는 [requirements.md](requirements.md)에 정리했습니다.
 
 ### 오프라인 다이어그램 뷰어 (JSON → HTML)
 

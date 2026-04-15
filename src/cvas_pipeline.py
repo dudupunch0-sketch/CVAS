@@ -13,6 +13,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
+from cvas_analysis import AnalysisOptions
 from cvas_callgraph import build_call_graph, build_call_sequence, find_function_calls
 from cvas_index import build_project_symbol_index
 from cvas_model import (
@@ -56,6 +57,7 @@ def build_model(
     rules: CycleRules,
     project_sources: Optional[List[Tuple[Path, str]]] = None,
     entry_file: Optional[Path] = None,
+    analysis_options: AnalysisOptions = AnalysisOptions(),
 ) -> Dict[str, object]:
     """Build complete enhanced model with P1+P2 features."""
 
@@ -75,7 +77,9 @@ def build_model(
             "note": f"{MARKER_START}/{MARKER_END} region not found or empty",
         }
 
-    region_functions = find_function_definitions(region)
+    region_functions = find_function_definitions(
+        region, analysis_options=analysis_options
+    )
     if not region_functions:
         print("WARNING: No functions found in CVAS region", file=sys.stderr)
         return {
@@ -91,7 +95,8 @@ def build_model(
 
     if project_sources:
         function_defs, duplicate_functions, symbol_index = build_project_symbol_index(
-            project_sources
+            project_sources,
+            analysis_options=analysis_options,
         )
     else:
         function_defs = {
@@ -121,7 +126,11 @@ def build_model(
         visited.add(current)
         analyzed_names.append(current)
         _, _, _, body, _ = func
-        calls, _ = find_function_calls(body, known_functions)
+        calls, _ = find_function_calls(
+            body,
+            known_functions,
+            analysis_options=analysis_options,
+        )
         for callee_name, _, _ in calls:
             if callee_name not in visited:
                 queue.append(callee_name)
@@ -149,6 +158,7 @@ def build_model(
             known_functions=known_functions,
             symbol_index=symbol_index,
             rules=rules,
+            analysis_options=analysis_options,
         )
         analysis_results[name] = result
         blocks.append(result.block)
@@ -195,8 +205,17 @@ def build_model(
                 )
 
     # P2: Build call graph
-    call_graph = build_call_graph(functions, block_ids, blocks)
-    call_sequence = build_call_sequence(functions, known_functions)
+    call_graph = build_call_graph(
+        functions,
+        block_ids,
+        blocks,
+        analysis_options=analysis_options,
+    )
+    call_sequence = build_call_sequence(
+        functions,
+        known_functions,
+        analysis_options=analysis_options,
+    )
 
     # Enhanced flow with call graph
     flow = Flow(
@@ -223,6 +242,8 @@ def build_model(
         "diagram_hint": {"layout": "TBD by drawing tool"},
         "note": analysis_note,
         "analysis_version": "2.0",
+        "analysis_mode": analysis_options.mode,
+        "analysis_backend": analysis_options.backend,
         "project_mode": bool(project_sources),
         "duplicate_functions": duplicate_functions,
     }

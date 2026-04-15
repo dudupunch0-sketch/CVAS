@@ -4,45 +4,144 @@ import re
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from c_ast_utils import parse_translation_unit
+from cvas_analysis import AnalysisOptions
+from cvas_clang import find_function_calls_with_clang
 from cvas_model import Block, CallGraph, CallGraphNode
 from cvas_source import split_top_level_commas, strip_comments_and_strings
-from cvas_text import KEYWORDS, parse_params
+from cvas_text import KEYWORDS, parse_params, split_statements
+
+_CALL_NAME_PATTERN = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
+
+
+def _find_matching_paren(text: str, open_index: int) -> int:
+    depth = 0
+    for idx in range(open_index, len(text)):
+        if text[idx] == "(":
+            depth += 1
+        elif text[idx] == ")":
+            depth -= 1
+            if depth == 0:
+                return idx
+    return -1
+
+
+def _extract_assigned_target(prefix: str, suffix: str) -> Optional[str]:
+    if suffix.strip():
+        return None
+    match = re.search(r"(?<![=!<>+\-*/%&|^])=(?!=)\s*$", prefix)
+    if not match:
+        return None
+
+    lhs = prefix[: match.start()].strip()
+    if not lhs:
+        return None
+
+    direct_lhs = re.fullmatch(
+        r"(?:\*+\s*)?[A-Za-z_]\w*(?:\s*(?:\[[^\]]*\]|\.[A-Za-z_]\w*|->\s*[A-Za-z_]\w*))*",
+        lhs,
+    )
+    if direct_lhs:
+        return direct_lhs.group(0).strip()
+
+    decl_name = re.search(r"([A-Za-z_]\w*)\s*$", lhs)
+    if decl_name:
+        return decl_name.group(1)
+
+    return None
+
+
+def _scan_calls_in_segment(
+    segment: str,
+    known_functions: set[str],
+    *,
+    allow_assignment: bool,
+) -> List[Tuple[str, List[str], Optional[str]]]:
+    cleaned = strip_comments_and_strings(segment)
+    calls: List[Tuple[str, List[str], Optional[str]]] = []
+    offset = 0
+
+    while True:
+        match = _CALL_NAME_PATTERN.search(cleaned, offset)
+        if match is None:
+            return calls
+
+        open_index = match.end() - 1
+        close_index = _find_matching_paren(cleaned, open_index)
+        if close_index == -1:
+            offset = match.end()
+            continue
+
+        args_text = segment[open_index + 1 : close_index]
+        nested_args = _scan_calls_in_segment(
+            args_text,
+            known_functions,
+            allow_assignment=False,
+        )
+        name = match.group(1)
+
+        if name in KEYWORDS or name not in known_functions:
+            calls.extend(nested_args)
+            offset = close_index + 1
+            continue
+
+        args = [arg.strip() for arg in split_top_level_commas(args_text) if arg.strip()]
+        assigned = None
+        if allow_assignment:
+            assigned = _extract_assigned_target(
+                cleaned[: match.start()],
+                cleaned[close_index + 1 :],
+            )
+
+        calls.append((name, args, assigned))
+        calls.extend(nested_args)
+        offset = close_index + 1
+
+
+def _find_calls_text(
+    body: str,
+    known_functions: set[str],
+) -> List[Tuple[str, List[str], Optional[str]]]:
+    calls: List[Tuple[str, List[str], Optional[str]]] = []
+    for statement in split_statements(body):
+        calls.extend(
+            _scan_calls_in_segment(
+                statement,
+                known_functions,
+                allow_assignment=True,
+            )
+        )
+    return calls
 
 
 def find_function_calls(
-    body: str, known_functions: Iterable[str]
+    body: str,
+    known_functions: Iterable[str],
+    analysis_options: AnalysisOptions = AnalysisOptions(),
 ) -> Tuple[List[Tuple[str, List[str], Optional[str]]], Dict[str, object]]:
     """Find function calls within known functions."""
-
-    def find_calls_regex() -> List[Tuple[str, List[str], Optional[str]]]:
-        cleaned = strip_comments_and_strings(body)
-        call_pattern = re.compile(
-            r"(?P<lhs>[A-Za-z_]\w*\s*=\s*)?(?P<name>\w+)\s*\((?P<args>[^)]*)\)",
-            re.DOTALL,
-        )
-        found_calls = []
-        for match in call_pattern.finditer(cleaned):
-            name = match.group("name")
-            if name in KEYWORDS or name not in known:
-                continue
-            args = [
-                arg.strip()
-                for arg in split_top_level_commas(match.group("args"))
-                if arg.strip()
-            ]
-            lhs = match.group("lhs")
-            assigned = lhs.split("=")[0].strip() if lhs else None
-            found_calls.append((name, args, assigned))
-        return found_calls
-
     known = set(known_functions)
+    limitations: List[str] = []
+
+    if analysis_options.mode == "full":
+        calls, metadata = find_function_calls_with_clang(
+            body,
+            known_functions,
+            clang_args=analysis_options.clang_args,
+        )
+        if calls or metadata["parser"] == "clang":
+            return calls, metadata
+        limitations.extend(metadata.get("limitations", []))
+
     calls: List[Tuple[str, List[str], Optional[str]]] = []
 
     parsed = parse_translation_unit(f"void __cvas_wrapper(void) {{\n{body}\n}}")
     if parsed is None:
-        return find_calls_regex(), {
-            "parser": "regex",
-            "limitations": ["AST parse failed; regex fallback used"],
+        return _find_calls_text(body, known), {
+            "parser": "text",
+            "limitations": [
+                *limitations,
+                "AST parse failed; text fallback used",
+            ],
         }
 
     pycparser_module, ast, generator, _ = parsed
@@ -93,7 +192,7 @@ def find_function_calls(
     walk(ast)
     return calls, {
         "parser": "ast",
-        "limitations": [],
+        "limitations": limitations,
     }
 
 
@@ -101,6 +200,7 @@ def build_call_graph(
     functions: List[Tuple[str, str, str, str, str]],
     block_ids: Dict[str, str],
     blocks: List[Block],
+    analysis_options: AnalysisOptions = AnalysisOptions(),
 ) -> CallGraph:
     """Build function call graph with dependency analysis."""
     nodes: Dict[str, CallGraphNode] = {}
@@ -123,11 +223,12 @@ def build_call_graph(
     analysis_limitations: List[str] = []
 
     for _, caller_name, _, body, _ in functions:
-        calls, metadata = find_function_calls(body, block_ids.keys())
-        if metadata["parser"] == "ast":
+        calls, metadata = find_function_calls(
+            body, block_ids.keys(), analysis_options=analysis_options
+        )
+        analysis_limitations.extend(metadata.get("limitations", []))
+        if metadata["parser"] in {"ast", "clang"}:
             ast_analyses += 1
-        else:
-            analysis_limitations.extend(metadata.get("limitations", []))
 
         for callee_name, _, _ in calls:
             if callee_name not in nodes:
@@ -235,6 +336,7 @@ def build_call_graph(
 def build_call_sequence(
     functions: List[Tuple[str, str, str, str, str]],
     known_functions: Iterable[str],
+    analysis_options: AnalysisOptions = AnalysisOptions(),
 ) -> List[Dict[str, object]]:
     """Build ordered call sequences per function."""
     known = set(known_functions)
@@ -244,7 +346,7 @@ def build_call_sequence(
     sequences: List[Dict[str, object]] = []
 
     for _, caller_name, _, body, _ in functions:
-        calls, _ = find_function_calls(body, known)
+        calls, _ = find_function_calls(body, known, analysis_options=analysis_options)
         call_items = []
         for callee_name, args, assigned in calls:
             call_items.append(
