@@ -64,7 +64,7 @@ ISP 알고리즘 C-model 분석을 위한 고급 파서로, `CVAS_START` / `CVAS
 
 - Python 3.10 이상
 - 기본 `fast` 분석 런타임은 표준 라이브러리만 사용
-- 개발/테스트 환경은 `pytest` 필요
+- Python-side dependencies are listed in `requirements.txt`
 - `--analysis-mode full` 사용 시: Python `clang` 바인딩 + 사용 가능한 `libclang`
 - 설치/가상환경/검증 명령은 [requirements.md](requirements.md) 참고
 
@@ -82,7 +82,7 @@ python -m venv .venv
 cd CVAS
 source ../.venv/bin/activate
 ../.venv/bin/python -m pip install --upgrade pip
-pip install -r requirements-dev.txt
+pip install -r requirements.txt
 ```
 
 ```bash
@@ -112,7 +112,7 @@ python src/cvas_cli.py model.c --analysis-mode full --clang-arg=-Iinclude -o out
 
 ```bash
 source ../.venv/bin/activate
-pip install -r requirements-full.txt
+pip install -r requirements.txt
 ```
 
 그리고 시스템에 `libclang`이 설치되어 있어야 합니다. 자세한 예시는 [requirements.md](requirements.md)에 정리했습니다.

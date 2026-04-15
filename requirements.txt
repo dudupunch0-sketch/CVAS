@@ -1,7 +1,13 @@
-# CVAS base runtime.
-# Fast analysis mode uses only the Python standard library, so there are no
-# required pip packages for the default runtime.
+# CVAS dependency manifest.
 #
-# Installation guide for an automated agent:
-# - To run tests or develop locally, install: pip install -r requirements-dev.txt
-# - To use --analysis-mode full, install: pip install -r requirements-full.txt
+# Fast analysis mode uses only the Python standard library, so no extra pip
+# packages are required for the default runtime.
+#
+# Install this file with pip to get the Python-side dependencies used by
+# development/test workflows and the optional full analysis backend.
+#
+# Development/test dependency:
+pytest
+#
+# Optional full-analysis dependency:
+clang

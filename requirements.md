@@ -15,31 +15,30 @@ source ../.venv/bin/activate
 ../.venv/bin/python -m pip install --upgrade pip
 ```
 
-Install development and test dependencies:
+Install the Python dependencies listed in `requirements.txt`:
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -r requirements.txt
 ```
 
 This installs:
 
-- the base runtime dependency set from `requirements.txt`
 - `pytest` for the regression test suite
+- `clang` Python bindings for `--analysis-mode full`
 
 ## Optional Full Analysis Backend
 
 The default `fast` mode does not need any extra runtime package.
 
-If you want `--analysis-mode full`, install the Python bindings:
+If you want `--analysis-mode full`, install the Python bindings from the same file:
 
 ```bash
 source ../.venv/bin/activate
-pip install -r requirements-full.txt
+pip install -r requirements.txt
 ```
 
 This installs:
 
-- the base runtime dependency set from `requirements.txt`
 - `clang` Python bindings
 
 `full` mode also requires a working system `libclang`. Install it with your OS package manager.

@@ -1,4 +1,0 @@
-# Optional dependencies for --analysis-mode full.
-# Install with: pip install -r requirements-full.txt
--r requirements.txt
-clang
