@@ -23,6 +23,7 @@ pip install -r requirements-dev.txt
 
 This installs:
 
+- the base runtime dependency set from `requirements.txt`
 - `pytest` for the regression test suite
 
 ## Optional Full Analysis Backend
@@ -38,6 +39,7 @@ pip install -r requirements-full.txt
 
 This installs:
 
+- the base runtime dependency set from `requirements.txt`
 - `clang` Python bindings
 
 `full` mode also requires a working system `libclang`. Install it with your OS package manager.

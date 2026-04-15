@@ -1,0 +1,2 @@
+# Base runtime for CVAS.
+# The fast analysis mode uses only the Python standard library.
