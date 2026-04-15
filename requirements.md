@@ -43,6 +43,22 @@ This installs:
 
 `full` mode also requires a working system `libclang`. Install it with your OS package manager.
 
+### RHEL 8.10 example
+
+On RHEL 8.10, install the LLVM toolset that provides Clang and `libclang`:
+
+```bash
+sudo dnf module install -y llvm-toolset
+```
+
+Then verify that Python can load the bindings:
+
+```bash
+python -c "from clang import cindex; cindex.Index.create(); print('clang ok')"
+```
+
+If Python still cannot find `libclang`, set `LIBCLANG_PATH` to the directory that contains `libclang.so`.
+
 Example on Ubuntu/Debian:
 
 ```bash

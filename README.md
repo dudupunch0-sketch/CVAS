@@ -66,6 +66,7 @@ ISP 알고리즘 C-model 분석을 위한 고급 파서로, `CVAS_START` / `CVAS
 - 기본 `fast` 분석 런타임은 표준 라이브러리만 사용
 - Python-side dependencies are listed in `requirements.txt`
 - `--analysis-mode full` 사용 시: Python `clang` 바인딩 + 사용 가능한 `libclang`
+- RHEL 8.10에서는 `sudo dnf module install -y llvm-toolset`로 LLVM toolset을 설치할 수 있음
 - 설치/가상환경/검증 명령은 [requirements.md](requirements.md) 참고
 
 ---
