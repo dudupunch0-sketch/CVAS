@@ -25,7 +25,7 @@ from cvas_model import (
 )
 from cvas_passes import FunctionAnalysisResult, analyze_function, expand_simple_function_macros
 from cvas_serialize import serialize_block, serialize_flow
-from cvas_source import extract_cvas_region, find_function_definitions
+from cvas_source import extract_cvas_region, find_cvas_region_bounds, find_function_definitions
 from cvas_model import (
     BasicBlock,
     Block,
@@ -77,9 +77,20 @@ def build_model(
             "note": f"{MARKER_START}/{MARKER_END} region not found or empty",
         }
 
-    region_functions = find_function_definitions(
-        region, analysis_options=analysis_options
-    )
+    if analysis_options.mode == "full":
+        region_bounds = find_cvas_region_bounds(source)
+        region_functions = find_function_definitions(
+            source,
+            analysis_options=analysis_options,
+            source_path=entry_file,
+            region_bounds=region_bounds,
+            required=True,
+        )
+    else:
+        region_functions = find_function_definitions(
+            region,
+            analysis_options=analysis_options,
+        )
     if not region_functions:
         print("WARNING: No functions found in CVAS region", file=sys.stderr)
         return {
@@ -130,6 +141,7 @@ def build_model(
             body,
             known_functions,
             analysis_options=analysis_options,
+            source_path=Path(func[4]),
         )
         for callee_name, _, _ in calls:
             if callee_name not in visited:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import sys
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 from c_ast_utils import parse_translation_unit
@@ -27,17 +28,26 @@ KEYWORDS = {
 
 def extract_cvas_region(source: str) -> Tuple[str, bool]:
     """Extract code between CVAS_START and CVAS_END markers."""
+    bounds = find_cvas_region_bounds(source)
+    if bounds is None:
+        return "", False
+    start_index, end_index = bounds
+    return source[start_index:end_index], True
+
+
+def find_cvas_region_bounds(source: str) -> Optional[Tuple[int, int]]:
+    """Return the source offsets for the CVAS region contents."""
     start_index = source.find(MARKER_START)
     end_index = source.find(MARKER_END)
 
     if start_index == -1 or end_index == -1:
-        return "", False
+        return None
 
     if end_index <= start_index:
         print(f"WARNING: {MARKER_END} appears before {MARKER_START}", file=sys.stderr)
-        return "", False
+        return None
 
-    return source[start_index + len(MARKER_START) : end_index], True
+    return start_index + len(MARKER_START), end_index
 
 
 def strip_comments_and_strings(source: str) -> str:
@@ -196,14 +206,23 @@ def _find_function_definitions_regex(source: str) -> List[Tuple[str, str, str, s
 
 
 def find_function_definitions(
-    source: str, analysis_options: AnalysisOptions = AnalysisOptions()
+    source: str,
+    analysis_options: AnalysisOptions = AnalysisOptions(),
+    *,
+    source_path: Optional[Path] = None,
+    region_bounds: Optional[Tuple[int, int]] = None,
+    required: bool = False,
 ) -> List[Tuple[str, str, str, str]]:
     """Find all function definitions in source code."""
     if analysis_options.mode == "full":
         functions = find_function_definitions_with_clang(
-            source, clang_args=analysis_options.clang_args
+            source,
+            analysis_options=analysis_options,
+            source_path=source_path,
+            region_bounds=region_bounds,
+            required=required,
         )
-        if functions:
+        if functions or required or source_path is not None or region_bounds is not None:
             return functions
 
     parsed = parse_translation_unit(source)

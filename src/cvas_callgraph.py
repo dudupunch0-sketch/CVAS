@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from c_ast_utils import parse_translation_unit
@@ -117,6 +118,8 @@ def find_function_calls(
     body: str,
     known_functions: Iterable[str],
     analysis_options: AnalysisOptions = AnalysisOptions(),
+    *,
+    source_path: Optional[Path] = None,
 ) -> Tuple[List[Tuple[str, List[str], Optional[str]]], Dict[str, object]]:
     """Find function calls within known functions."""
     known = set(known_functions)
@@ -126,7 +129,8 @@ def find_function_calls(
         calls, metadata = find_function_calls_with_clang(
             body,
             known_functions,
-            clang_args=analysis_options.clang_args,
+            analysis_options=analysis_options,
+            source_path=source_path,
         )
         if calls or metadata["parser"] == "clang":
             return calls, metadata
@@ -222,9 +226,12 @@ def build_call_graph(
     ast_analyses = 0
     analysis_limitations: List[str] = []
 
-    for _, caller_name, _, body, _ in functions:
+    for _, caller_name, _, body, source_file in functions:
         calls, metadata = find_function_calls(
-            body, block_ids.keys(), analysis_options=analysis_options
+            body,
+            block_ids.keys(),
+            analysis_options=analysis_options,
+            source_path=Path(source_file),
         )
         analysis_limitations.extend(metadata.get("limitations", []))
         if metadata["parser"] in {"ast", "clang"}:
@@ -345,8 +352,13 @@ def build_call_sequence(
     }
     sequences: List[Dict[str, object]] = []
 
-    for _, caller_name, _, body, _ in functions:
-        calls, _ = find_function_calls(body, known, analysis_options=analysis_options)
+    for _, caller_name, _, body, source_file in functions:
+        calls, _ = find_function_calls(
+            body,
+            known,
+            analysis_options=analysis_options,
+            source_path=Path(source_file),
+        )
         call_items = []
         for callee_name, args, assigned in calls:
             call_items.append(

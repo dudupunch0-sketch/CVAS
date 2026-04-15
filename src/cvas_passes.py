@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 from c_ast_utils import parse_statement
@@ -188,13 +189,16 @@ def extract_keyword_condition(
     statement: str,
     keyword: str,
     analysis_options: AnalysisOptions = AnalysisOptions(),
+    *,
+    source_path: Optional[Path] = None,
 ) -> Optional[str]:
     """Extract a condition expression from a keyword statement."""
     if analysis_options.mode == "full":
         condition = extract_condition_with_clang(
             statement,
             keyword,
-            clang_args=analysis_options.clang_args,
+            analysis_options=analysis_options,
+            source_path=source_path,
         )
         if condition is not None:
             return condition
@@ -220,12 +224,17 @@ def extract_keyword_condition(
 
 
 def extract_for_condition(
-    statement: str, analysis_options: AnalysisOptions = AnalysisOptions()
+    statement: str,
+    analysis_options: AnalysisOptions = AnalysisOptions(),
+    *,
+    source_path: Optional[Path] = None,
 ) -> Optional[str]:
     """Extract the condition expression from a for loop statement."""
     if analysis_options.mode == "full":
         condition = extract_for_condition_with_clang(
-            statement, clang_args=analysis_options.clang_args
+            statement,
+            analysis_options=analysis_options,
+            source_path=source_path,
         )
         if condition is not None:
             return condition
@@ -376,6 +385,8 @@ def extract_operations(
     block_inputs: List[str],
     has_return: bool,
     analysis_options: AnalysisOptions = AnalysisOptions(),
+    *,
+    source_path: Optional[Path] = None,
 ) -> Tuple[List[Operation], List[Signal], OpSummary]:
     """Extract operations from a function body."""
     cleaned = strip_comments_and_strings(body)
@@ -508,7 +519,11 @@ def extract_operations(
                     )
             continue
 
-        for_condition = extract_for_condition(statement, analysis_options=analysis_options)
+        for_condition = extract_for_condition(
+            statement,
+            analysis_options=analysis_options,
+            source_path=source_path,
+        )
         if for_condition is not None:
             output_name = f"cond_{condition_counter}"
             condition_counter += 1
@@ -528,6 +543,7 @@ def extract_operations(
                 statement,
                 keyword,
                 analysis_options=analysis_options,
+                source_path=source_path,
             )
             if condition_expr is not None:
                 output_name = f"cond_{condition_counter}"
@@ -608,6 +624,7 @@ def analyze_function(
         inputs,
         bool(outputs),
         analysis_options=analysis_options,
+        source_path=Path(source_file),
     )
     cycles = estimate_cycles(summary, rules)
 
@@ -677,6 +694,7 @@ def analyze_function(
         body,
         known_functions,
         analysis_options=analysis_options,
+        source_path=Path(source_file),
     )
 
     return FunctionAnalysisResult(

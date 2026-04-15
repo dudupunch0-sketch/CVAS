@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from cvas_analysis import AnalysisOptions
-from cvas_clang import ClangUnavailableError, ensure_clang_available
+from cvas_clang import ClangParseError, ClangUnavailableError, ensure_clang_available
 from cvas_model import CycleRules
 from cvas_pipeline import build_model
 from cvas_index import collect_project_sources
@@ -91,6 +91,16 @@ Examples:
         action="append",
         default=[],
         help="Additional clang argument used only in full analysis mode",
+    )
+    parser.add_argument(
+        "--language",
+        choices=["c", "c++"],
+        help="Override source language used by clang in full analysis mode",
+    )
+    parser.add_argument(
+        "--clang-compile-db",
+        type=Path,
+        help="Path to compile_commands.json used to reconstruct clang flags in full analysis mode",
     )
 
     return parser.parse_args()
@@ -179,12 +189,25 @@ def _load_project_sources(
     return collect_project_sources(resolved_root, extensions, resolved_entry)
 
 
-def _load_analysis_options(args: argparse.Namespace) -> AnalysisOptions:
+def _load_analysis_options(
+    args: argparse.Namespace, entry_file: Path
+) -> AnalysisOptions:
     options = AnalysisOptions.from_values(
         mode=args.analysis_mode,
         clang_args=args.clang_arg,
+        language_override=args.language,
+        compile_db_path=(
+            str(args.clang_compile_db.resolve()) if args.clang_compile_db else None
+        ),
+        project_root=(str(args.project_root.resolve()) if args.project_root else None),
     )
     if options.mode == "full":
+        if entry_file.suffix.lower() in {".h", ".hpp", ".hh", ".hxx"}:
+            print(
+                "ERROR: Full analysis mode does not accept header files as the entry input",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         try:
             ensure_clang_available()
         except ClangUnavailableError as exc:
@@ -197,8 +220,8 @@ def main() -> None:
     """Main CLI entry point."""
     args = parse_args()
     rules = _load_cycle_rules(args)
-    analysis_options = _load_analysis_options(args)
     entry_file, source = _load_source(args)
+    analysis_options = _load_analysis_options(args, entry_file)
     project_sources = _load_project_sources(args, entry_file)
 
     if project_sources:
@@ -214,13 +237,17 @@ def main() -> None:
             file=sys.stderr,
         )
 
-    model = build_model(
-        source,
-        rules,
-        project_sources=project_sources,
-        entry_file=entry_file,
-        analysis_options=analysis_options,
-    )
+    try:
+        model = build_model(
+            source,
+            rules,
+            project_sources=project_sources,
+            entry_file=entry_file,
+            analysis_options=analysis_options,
+        )
+    except ClangParseError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
     output = json.dumps(model, indent=2, ensure_ascii=False)
 
     if args.output:

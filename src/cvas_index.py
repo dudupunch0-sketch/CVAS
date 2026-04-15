@@ -54,7 +54,11 @@ def build_project_symbol_index(
 
     for path, source in project_sources:
         rel_path = str(path)
-        functions = find_function_definitions(source, analysis_options=analysis_options)
+        functions = find_function_definitions(
+            source,
+            analysis_options=analysis_options,
+            source_path=path,
+        )
         for ret, name, params, body in functions:
             if name in function_defs:
                 duplicate_functions.append(

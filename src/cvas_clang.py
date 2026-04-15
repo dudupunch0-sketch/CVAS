@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
+from cvas_analysis import AnalysisOptions, ResolvedClangConfig, resolve_clang_config
+
 _CLANG_IMPORT_ERROR: Optional[Exception] = None
 _LIBCLANG_CONFIGURED = False
 
@@ -18,6 +20,45 @@ except Exception as exc:  # pragma: no cover - exercised only when clang is miss
 
 class ClangUnavailableError(RuntimeError):
     """Raised when libclang is unavailable for full analysis mode."""
+
+
+class ClangParseError(RuntimeError):
+    """Raised when clang cannot parse the primary translation unit."""
+
+    def __init__(
+        self,
+        *,
+        parse_target: str,
+        config: ResolvedClangConfig,
+        diagnostics: Sequence[str],
+    ) -> None:
+        self.parse_target = parse_target
+        self.config = config
+        self.diagnostics = tuple(diagnostics)
+        super().__init__(self._format_message())
+
+    def _format_message(self) -> str:
+        compile_db = str(self.config.compile_db_path) if self.config.compile_db_path else "none"
+        compile_match = (
+            str(self.config.compile_db_command_file)
+            if self.config.compile_db_command_file is not None
+            else "none"
+        )
+        source_path = str(self.config.source_path) if self.config.source_path else "in-memory"
+        args_summary = " ".join(self.config.final_clang_args)
+        lines = [
+            f"clang failed to parse {self.parse_target} in full analysis mode",
+            f"  source: {source_path}",
+            f"  language: {self.config.language}",
+            f"  standard: {self.config.standard}",
+            f"  compile_db: {compile_db}",
+            f"  compile_db_match: {compile_match}",
+            f"  final_args: {args_summary}",
+        ]
+        if self.diagnostics:
+            lines.append("  diagnostics:")
+            lines.extend(f"    - {message}" for message in self.diagnostics)
+        return "\n".join(lines)
 
 
 KEYWORDS = {
@@ -69,6 +110,11 @@ TYPE_AND_C_KEYWORDS = {
     "void",
     "volatile",
     "while",
+}
+
+_FUNCTION_CURSOR_KINDS = {
+    "FUNCTION_DECL",
+    "CXX_METHOD",
 }
 
 
@@ -154,19 +200,44 @@ def strip_cvas_markers(source: str) -> str:
     return pattern.sub(lambda match: _blank_preserving_newlines(match.group(0)), source)
 
 
+def _coerce_analysis_options(
+    analysis_options: Optional[AnalysisOptions],
+    clang_args: Sequence[str],
+) -> AnalysisOptions:
+    if analysis_options is not None:
+        return analysis_options
+    return AnalysisOptions(mode="full", clang_args=tuple(clang_args))
+
+
+def _wrapper_path(config: ResolvedClangConfig, stem: str) -> str:
+    if config.source_path is None:
+        return f"{stem}{config.wrapper_suffix}"
+    return str(config.source_path.with_name(f"{stem}{config.wrapper_suffix}"))
+
+
 def _parse_translation_unit(
-    source: str, *, filename: str, clang_args: Sequence[str]
+    source: str,
+    *,
+    filename: str,
+    config: ResolvedClangConfig,
+    required: bool = False,
+    parse_target: str = "translation unit",
 ):
     ensure_clang_available()
     normalized = strip_cvas_markers(source)
     index = cindex.Index.create()
-    args = ["-xc", "-std=c11", *clang_args]
     tu = index.parse(
         filename,
-        args=args,
+        args=list(config.final_clang_args),
         unsaved_files=[(filename, normalized)],
         options=0,
     )
+    if required and _tu_has_errors(tu):
+        raise ClangParseError(
+            parse_target=parse_target,
+            config=config,
+            diagnostics=_diagnostic_messages(tu),
+        )
     return tu, normalized
 
 
@@ -174,16 +245,25 @@ def _tu_has_errors(tu) -> bool:
     return any(diagnostic.severity >= 3 for diagnostic in tu.diagnostics)
 
 
-def _diagnostic_limitations(tu) -> List[str]:
-    limitations: List[str] = []
+def _diagnostic_messages(tu) -> List[str]:
+    messages: List[str] = []
     for diagnostic in tu.diagnostics:
         if diagnostic.severity < 3:
             continue
-        message = " ".join(diagnostic.spelling.split())
-        limitation = f"clang parse error: {message}"
-        if limitation not in limitations:
-            limitations.append(limitation)
-    return limitations
+        location = ""
+        if diagnostic.location.file is not None:
+            location = (
+                f"{diagnostic.location.file.name}:"
+                f"{diagnostic.location.line}:{diagnostic.location.column}: "
+            )
+        message = f"{location}{' '.join(diagnostic.spelling.split())}"
+        if message not in messages:
+            messages.append(message)
+    return messages
+
+
+def _diagnostic_limitations(tu) -> List[str]:
+    return [f"clang parse error: {message}" for message in _diagnostic_messages(tu)]
 
 
 def _cursor_text(source: str, cursor) -> str:
@@ -215,28 +295,64 @@ def _extract_body(compound_cursor, source: str) -> str:
     return text
 
 
+def _cursor_location_matches(cursor, filename: str) -> bool:
+    if cursor.location.file is None:
+        return False
+    try:
+        return Path(cursor.location.file.name).resolve() == Path(filename).resolve()
+    except OSError:
+        return cursor.location.file.name == filename
+
+
+def _cursor_in_region(cursor, region_bounds: Optional[Tuple[int, int]]) -> bool:
+    if region_bounds is None:
+        return True
+    start = cursor.extent.start.offset
+    end = cursor.extent.end.offset
+    if start is None or end is None:
+        return False
+    region_start, region_end = region_bounds
+    return region_start <= start and end <= region_end
+
+
 def find_function_definitions_with_clang(
     source: str,
     *,
+    analysis_options: Optional[AnalysisOptions] = None,
     clang_args: Sequence[str] = (),
-    filename: str = "__cvas_region__.c",
+    source_path: Optional[Path] = None,
+    region_bounds: Optional[Tuple[int, int]] = None,
+    required: bool = False,
 ) -> List[Tuple[str, str, str, str]]:
     """Extract function definitions using clang's parser."""
+    options = _coerce_analysis_options(analysis_options, clang_args)
+    config = resolve_clang_config(options, source_path=source_path)
+    filename = str(source_path.resolve()) if source_path is not None else _wrapper_path(config, "__cvas_region__")
     tu, normalized = _parse_translation_unit(
-        source, filename=filename, clang_args=clang_args
+        source,
+        filename=filename,
+        config=config,
+        required=required,
+        parse_target="entry translation unit",
     )
     functions: List[Tuple[str, str, str, str]] = []
 
-    for cursor in tu.cursor.get_children():
-        if cursor.kind != cindex.CursorKind.FUNCTION_DECL:
+    for cursor in tu.cursor.walk_preorder():
+        if cursor.kind.name not in _FUNCTION_CURSOR_KINDS:
             continue
         if not cursor.is_definition():
             continue
-        if cursor.location.file is None or cursor.location.file.name != filename:
+        if not _cursor_location_matches(cursor, filename):
+            continue
+        if not _cursor_in_region(cursor, region_bounds):
             continue
 
         compound = next(
-            (child for child in cursor.get_children() if child.kind == cindex.CursorKind.COMPOUND_STMT),
+            (
+                child
+                for child in cursor.get_children()
+                if child.kind == cindex.CursorKind.COMPOUND_STMT
+            ),
             None,
         )
         if compound is None:
@@ -323,9 +439,19 @@ def _build_wrapper_source(
     return source, wrapped
 
 
-def _find_wrapper_statement_cursor(source: str, *, clang_args: Sequence[str]):
+def _find_wrapper_statement_cursor(
+    source: str,
+    *,
+    analysis_options: Optional[AnalysisOptions] = None,
+    clang_args: Sequence[str] = (),
+    source_path: Optional[Path] = None,
+):
+    options = _coerce_analysis_options(analysis_options, clang_args)
+    config = resolve_clang_config(options, source_path=source_path)
     tu, normalized = _parse_translation_unit(
-        source, filename="__cvas_stmt__.c", clang_args=clang_args
+        source,
+        filename=_wrapper_path(config, "__cvas_stmt__"),
+        config=config,
     )
     if _tu_has_errors(tu):
         return None, normalized
@@ -333,7 +459,11 @@ def _find_wrapper_statement_cursor(source: str, *, clang_args: Sequence[str]):
         if cursor.kind != cindex.CursorKind.FUNCTION_DECL or cursor.spelling != "__cvas_stmt":
             continue
         compound = next(
-            (child for child in cursor.get_children() if child.kind == cindex.CursorKind.COMPOUND_STMT),
+            (
+                child
+                for child in cursor.get_children()
+                if child.kind == cindex.CursorKind.COMPOUND_STMT
+            ),
             None,
         )
         if compound is None:
@@ -365,7 +495,12 @@ def _condition_from_cursor(statement_cursor, normalized_source: str) -> Optional
 
 
 def extract_condition_with_clang(
-    statement: str, keyword: str, *, clang_args: Sequence[str] = ()
+    statement: str,
+    keyword: str,
+    *,
+    analysis_options: Optional[AnalysisOptions] = None,
+    clang_args: Sequence[str] = (),
+    source_path: Optional[Path] = None,
 ) -> Optional[str]:
     """Extract if/while/do-while conditions from a single statement."""
     function_names = _function_like_names(statement)
@@ -373,7 +508,10 @@ def extract_condition_with_clang(
         statement, wrapper_name="__cvas_stmt", function_names=function_names
     )
     statement_cursor, normalized = _find_wrapper_statement_cursor(
-        wrapper_source, clang_args=clang_args
+        wrapper_source,
+        analysis_options=analysis_options,
+        clang_args=clang_args,
+        source_path=source_path,
     )
     if statement_cursor is None:
         return None
@@ -390,7 +528,11 @@ def extract_condition_with_clang(
 
 
 def extract_for_condition_with_clang(
-    statement: str, *, clang_args: Sequence[str] = ()
+    statement: str,
+    *,
+    analysis_options: Optional[AnalysisOptions] = None,
+    clang_args: Sequence[str] = (),
+    source_path: Optional[Path] = None,
 ) -> Optional[str]:
     """Extract the condition expression from a single for statement."""
     function_names = _function_like_names(statement)
@@ -398,7 +540,10 @@ def extract_for_condition_with_clang(
         statement, wrapper_name="__cvas_stmt", function_names=function_names
     )
     statement_cursor, normalized = _find_wrapper_statement_cursor(
-        wrapper_source, clang_args=clang_args
+        wrapper_source,
+        analysis_options=analysis_options,
+        clang_args=clang_args,
+        source_path=source_path,
     )
     if statement_cursor is None or statement_cursor.kind != cindex.CursorKind.FOR_STMT:
         return None
@@ -432,15 +577,21 @@ def find_function_calls_with_clang(
     body: str,
     known_functions: Iterable[str],
     *,
+    analysis_options: Optional[AnalysisOptions] = None,
     clang_args: Sequence[str] = (),
+    source_path: Optional[Path] = None,
 ) -> Tuple[List[Tuple[str, List[str], Optional[str]]], Dict[str, object]]:
     """Find function calls using clang AST traversal."""
+    options = _coerce_analysis_options(analysis_options, clang_args)
+    config = resolve_clang_config(options, source_path=source_path)
     known = list(dict.fromkeys(known_functions))
     wrapper_source, _ = _build_wrapper_source(
         body, wrapper_name="__cvas_wrapper", function_names=known
     )
     tu, normalized = _parse_translation_unit(
-        wrapper_source, filename="__cvas_calls__.c", clang_args=clang_args
+        wrapper_source,
+        filename=_wrapper_path(config, "__cvas_calls__"),
+        config=config,
     )
     if _tu_has_errors(tu):
         return [], {
