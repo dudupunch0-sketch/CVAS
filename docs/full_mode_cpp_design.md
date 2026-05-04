@@ -80,6 +80,7 @@ The command is intentionally conservative for GCC 10.2 compatibility. It uses:
 - `-std=<resolved-standard>`
 - `-DCVAS_START=`
 - `-DCVAS_END=`
+- `-Wno-error=implicit-function-declaration` for C inputs, so GCC 14+ keeps historical implicit-call diagnostics as warnings during best-effort metadata generation
 - compatible include/define flags reconstructed from CLI args or `compile_commands.json`
 
 It intentionally avoids newer/non-portable diagnostics features such as:

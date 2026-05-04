@@ -283,6 +283,7 @@ def test_gcc_dump_command_uses_gcc_10_2_compatible_flags(monkeypatch, tmp_path):
     cmd = captured["cmd"]
     assert metadata["status"] == "ok"
     assert "-fdump-tree-cfg" in cmd
+    assert "-Wno-error=implicit-function-declaration" in cmd
     assert "-fdiagnostics-format=json" not in cmd
     assert "-fanalyzer" not in cmd
     assert "-DCVAS_START=" in cmd

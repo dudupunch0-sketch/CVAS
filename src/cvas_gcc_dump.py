@@ -89,6 +89,12 @@ def run_gcc_dump(
             "-DCVAS_START=",
             "-DCVAS_END=",
         ]
+        if language != "c++":
+            # GCC 14 promotes implicit function declarations to errors in C99+
+            # modes. CVAS dump metadata is best-effort and may compile source
+            # outside the marked region, so keep this historical diagnostic as a
+            # warning for GCC 10.2+ compatibility instead of losing the dump.
+            cmd.append("-Wno-error=implicit-function-declaration")
         idx = 0
         while idx < len(config.final_clang_args):
             arg = config.final_clang_args[idx]
