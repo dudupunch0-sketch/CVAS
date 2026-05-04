@@ -121,6 +121,15 @@ def build_html(data: dict) -> str:
       padding: 4px 10px;
       white-space: nowrap;
     }}
+    #analysisSummary {{
+      font-size: 12px;
+      color: #1f2937;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      border-radius: 999px;
+      padding: 4px 10px;
+      white-space: nowrap;
+    }}
     main {{
       flex: 1;
       display: grid;
@@ -236,6 +245,39 @@ def build_html(data: dict) -> str:
       margin-top: 0;
       font-size: 16px;
     }}
+    #analysis-card {{
+      margin-bottom: 12px;
+      padding: 10px;
+      border: 1px solid #dbeafe;
+      border-radius: 8px;
+      background: #eff6ff;
+    }}
+    #analysis-card h3 {{
+      margin: 0 0 8px 0;
+      font-size: 14px;
+      color: #1e3a8a;
+    }}
+    #analysis-summary-table {{
+      display: grid;
+      grid-template-columns: minmax(100px, max-content) minmax(0, 1fr);
+      gap: 4px 10px;
+      font-size: 12px;
+      line-height: 1.35;
+    }}
+    #analysis-summary-table dt {{
+      margin: 0;
+      color: #1f2937;
+      font-weight: 600;
+    }}
+    #analysis-summary-table dd {{
+      margin: 0;
+      color: #374151;
+      word-break: break-word;
+    }}
+    #analysis-summary-table code {{
+      font-family: "SFMono-Regular", "Consolas", monospace;
+      font-size: 11px;
+    }}
     #detail-json {{
       background: #0f172a;
       color: #e2e8f0;
@@ -323,6 +365,7 @@ def build_html(data: dict) -> str:
     <button id=\"seqExport\" class=\"tab\">Export Map</button>
     <button id=\"ioLoad\" class=\"tab\">Load IO</button>
     <span id=\"ioStatus\">IO: none</span>
+    <span id=\"analysisSummary\">Analysis: loading</span>
     <input id=\"seqFile\" type=\"file\" accept=\"application/json\" hidden />
     <input id=\"ioFile\" type=\"file\" accept=\"application/json\" hidden />
   </header>
@@ -335,6 +378,10 @@ def build_html(data: dict) -> str:
     </section>
     <aside id=\"detail-panel\">
       <h2>Details</h2>
+      <div id=\"analysis-card\">
+        <h3>Analysis Summary</h3>
+        <dl id=\"analysis-summary-table\"></dl>
+      </div>
       <div id=\"detail-json\">Click a node or edge to inspect data.</div>
       <div id=\"anomaly-list\" hidden>
         <strong>Anomaly Report</strong>
@@ -372,6 +419,81 @@ def build_html(data: dict) -> str:
     const el = document.getElementById("ioStatus");
     if (!el) return;
     el.textContent = `IO: ${{state.functionIOSource || "none"}}`;
+  }}
+
+  function safeValue(value, fallback = "unknown") {{
+    if (value === null || value === undefined || value === "") return fallback;
+    return String(value);
+  }}
+
+  function arrayCount(value) {{
+    return Array.isArray(value) ? String(value.length) : "0";
+  }}
+
+  function summarizeGccDump(gccDump) {{
+    if (!gccDump || typeof gccDump !== "object") return "not emitted (fast mode or legacy artifact)";
+    const status = safeValue(gccDump.status);
+    const backend = safeValue(gccDump.backend);
+    const language = safeValue(gccDump.language);
+    const standard = safeValue(gccDump.standard);
+    return `${{status}} (${{backend}}, ${{language}}/${{standard}})`;
+  }}
+
+  function buildAnalysisRows(data) {{
+    const flow = data.flow || {{}};
+    const callGraph = flow.call_graph || {{}};
+    const callGraphNodes = callGraph.nodes && typeof callGraph.nodes === "object"
+      ? Object.keys(callGraph.nodes).length
+      : 0;
+    const rows = [
+      ["mode", safeValue(data.analysis_mode)],
+      ["backend", safeValue(data.analysis_backend)],
+      ["version", safeValue(data.analysis_version)],
+      ["project mode", typeof data.project_mode === "boolean" ? String(data.project_mode) : safeValue(data.project_mode)],
+      ["blocks", arrayCount(data.blocks)],
+      ["operations", arrayCount(data.operations)],
+      ["signals", arrayCount(data.signals)],
+      ["execution order", arrayCount(flow.execution_order)],
+      ["call sequence", arrayCount(flow.call_sequence)],
+      ["call graph nodes", String(callGraphNodes)],
+      ["gcc dump", summarizeGccDump(data.gcc_dump)]
+    ];
+
+    if (data.gcc_dump && typeof data.gcc_dump === "object") {{
+      const gccDump = data.gcc_dump;
+      rows.push(["gcc returncode", safeValue(gccDump.returncode, "n/a")]);
+      rows.push(["gcc diagnostics", arrayCount(gccDump.diagnostics)]);
+      rows.push(["gcc dump files", arrayCount(gccDump.dump_files)]);
+    }}
+    return rows;
+  }}
+
+  function renderAnalysisSummary(state) {{
+    const data = state.data || {{}};
+    const badge = document.getElementById("analysisSummary");
+    const table = document.getElementById("analysis-summary-table");
+    const mode = safeValue(data.analysis_mode);
+    const backend = safeValue(data.analysis_backend);
+    const gccStatus = data.gcc_dump && typeof data.gcc_dump === "object"
+      ? ` | gcc_dump: ${{safeValue(data.gcc_dump.status)}}`
+      : "";
+    if (badge) badge.textContent = `mode: ${{mode}} | backend: ${{backend}}${{gccStatus}}`;
+    if (!table) return;
+    table.innerHTML = "";
+    buildAnalysisRows(data).forEach(([label, value]) => {{
+      const dt = document.createElement("dt");
+      dt.textContent = label;
+      const dd = document.createElement("dd");
+      if (label.endsWith("command")) {{
+        const code = document.createElement("code");
+        code.textContent = String(value);
+        dd.appendChild(code);
+      }} else {{
+        dd.textContent = String(value);
+      }}
+      table.appendChild(dt);
+      table.appendChild(dd);
+    }});
   }}
 
   function applySequenceZoom(state) {{
@@ -905,6 +1027,7 @@ def build_html(data: dict) -> str:
     state.functionIO = (DEFAULT_FUNCTION_IO && typeof DEFAULT_FUNCTION_IO === "object") ? DEFAULT_FUNCTION_IO : {{}};
     state.functionIOSource = Object.keys(state.functionIO).length ? "embedded" : "none";
     updateIOSourceStatus(state);
+    renderAnalysisSummary(state);
 
     renderSequence(state);
     bindUI(state);

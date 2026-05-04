@@ -8306,7 +8306,7 @@
       "analysis_confidence": "medium",
       "analysis_coverage": 0.944,
       "analysis_limitations": [
-        "AST parse failed; regex fallback used"
+        "AST parse failed; text fallback used"
       ]
     },
     "call_sequence": [
@@ -9227,8 +9227,8 @@
   },
   "note": "Enhanced with P1+P2: complete data flow, CFG, call graph",
   "analysis_version": "2.0",
-  "analysis_mode": "fast",
-  "analysis_backend": "pycparser",
   "project_mode": false,
-  "duplicate_functions": []
+  "duplicate_functions": [],
+  "analysis_mode": "fast",
+  "analysis_backend": "pycparser"
 }
