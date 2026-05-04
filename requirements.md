@@ -1,12 +1,11 @@
 # CVAS Environment Setup
 
-Run all commands from the `CVAS/` repository root.
-The shared virtual environment lives one level up at `../.venv`.
+Run commands from the `CVAS/` repository root unless noted otherwise.
+The shared virtual environment normally lives one level up at `../.venv`. If you are inside a Git worktree under `CVAS/.worktrees/<name>`, use `../../../.venv/bin/python` for verification commands.
 
 ## Base Development Environment
 
 Create and activate a virtual environment:
-
 ```bash
 cd ..
 python -m venv .venv
@@ -16,68 +15,46 @@ source ../.venv/bin/activate
 ```
 
 Install the Python dependencies listed in `requirements.txt`:
-
 ```bash
 pip install -r requirements.txt
 ```
 
-This installs:
+This installs `pycparser` for AST-backed C parsing and `pytest` for the regression test suite. The default `fast` analysis mode uses `pycparser` first and text fallback otherwise.
 
-- `pytest` for the regression test suite
-- `clang` Python bindings for `--analysis-mode full`
+## Optional Analysis Backends
 
-## Optional Full Analysis Backend
+### Full mode: optional tree-sitter + GCC dump
 
-The default `fast` mode does not need any extra runtime package.
-
-If you want `--analysis-mode full`, install the Python bindings from the same file:
+`--analysis-mode full` uses optional tree-sitter C/C++ grammars for structural function discovery when these packages are installed:
 
 ```bash
-source ../.venv/bin/activate
-pip install -r requirements.txt
+pip install tree_sitter tree_sitter_c tree_sitter_cpp
 ```
 
-This installs:
+If they are not installed, CVAS falls back to the existing fast pycparser/text path.
 
-- `clang` Python bindings
+### Full mode: GCC dump
 
-`full` mode also requires a working system `libclang`. Install it with your OS package manager.
+`--analysis-mode full` no longer requires Python `clang` bindings or system `libclang`. It runs the normal fast analysis and augments the JSON with non-fatal `gcc_dump` metadata.
 
-### RHEL 8.10 example
+Install a system GCC toolchain if `gcc`/`g++` are missing.
 
-On RHEL 8.10, install the LLVM toolset that provides Clang and `libclang`:
-
+RHEL 8.10 example:
 ```bash
-sudo dnf module install -y llvm-toolset
+sudo dnf groupinstall -y "Development Tools"
 ```
 
-Then verify that Python can load the bindings:
-
-```bash
-python -c "from clang import cindex; cindex.Index.create(); print('clang ok')"
-```
-
-If Python still cannot find `libclang`, set `LIBCLANG_PATH` to the directory that contains `libclang.so`.
-
-Example on Ubuntu/Debian:
-
+Ubuntu/Debian example:
 ```bash
 sudo apt-get update
-sudo apt-get install libclang-dev
+sudo apt-get install build-essential
 ```
 
-If `libclang` is installed in a non-standard location, set `LIBCLANG_PATH` before running CVAS.
-
-Example:
-
-```bash
-export LIBCLANG_PATH=/path/to/clang/native
-```
+The legacy `--clang-arg` and `--clang-compile-db` option names are still accepted for compatibility; include/define/std flags from them are reused by the GCC dump pass.
 
 ## Verification Commands
 
 After the virtual environment is active:
-
 ```bash
 ../.venv/bin/python -m pytest -q
 ../.venv/bin/python -m py_compile \
@@ -88,7 +65,9 @@ After the virtual environment is active:
   src/cvas_callgraph.py \
   src/cvas_source.py \
   src/cvas_analysis.py \
-  src/cvas_clang.py \
+  src/cvas_gcc_dump.py \
+  src/cvas_treesitter.py \
+  src/c_ast_utils.py \
   json_to_html.py \
   tools/generate_function_io.py
 ```
@@ -96,13 +75,11 @@ After the virtual environment is active:
 ## Quick Smoke Tests
 
 Fast mode:
-
 ```bash
 ../.venv/bin/python src/cvas_cli.py test_examples.c --analysis-mode fast -o /tmp/cvas_fast.json
 ```
 
 Full mode:
-
 ```bash
 ../.venv/bin/python src/cvas_cli.py test_examples.c --analysis-mode full -o /tmp/cvas_full.json
 ```

@@ -193,7 +193,7 @@ def extract_keyword_condition(
     source_path: Optional[Path] = None,
 ) -> Optional[str]:
     """Extract a condition expression from a keyword statement."""
-    if analysis_options.mode == "full":
+    if analysis_options.backend == "clang":
         condition = extract_condition_with_clang(
             statement,
             keyword,
@@ -230,7 +230,7 @@ def extract_for_condition(
     source_path: Optional[Path] = None,
 ) -> Optional[str]:
     """Extract the condition expression from a for loop statement."""
-    if analysis_options.mode == "full":
+    if analysis_options.backend == "clang":
         condition = extract_for_condition_with_clang(
             statement,
             analysis_options=analysis_options,

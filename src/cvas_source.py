@@ -8,6 +8,7 @@ from typing import List, Optional, Tuple
 from c_ast_utils import parse_translation_unit
 from cvas_analysis import AnalysisOptions
 from cvas_clang import find_function_definitions_with_clang
+from cvas_treesitter import find_function_definitions_with_tree_sitter
 
 MARKER_START = "CVAS_START"
 MARKER_END = "CVAS_END"
@@ -212,9 +213,19 @@ def find_function_definitions(
     source_path: Optional[Path] = None,
     region_bounds: Optional[Tuple[int, int]] = None,
     required: bool = False,
+    merge_fallback: bool = False,
 ) -> List[Tuple[str, str, str, str]]:
     """Find all function definitions in source code."""
+    tree_sitter_functions: List[Tuple[str, str, str, str]] = []
     if analysis_options.mode == "full":
+        tree_sitter_functions = find_function_definitions_with_tree_sitter(
+            source,
+            language=analysis_options.language_override,
+            source_path=source_path,
+            region_bounds=region_bounds,
+        )
+
+    if analysis_options.backend == "clang":
         functions = find_function_definitions_with_clang(
             source,
             analysis_options=analysis_options,
@@ -227,7 +238,10 @@ def find_function_definitions(
 
     parsed = parse_translation_unit(source)
     if parsed is None:
-        return _find_function_definitions_regex(source)
+        fallback_functions = _find_function_definitions_regex(source)
+        return _merge_function_definitions(
+            tree_sitter_functions, fallback_functions, merge_fallback=merge_fallback
+        )
 
     pycparser_module, ast, generator, normalized = parsed
     cleaned = strip_comments_and_strings(normalized)
@@ -247,7 +261,34 @@ def find_function_definitions(
         if coord is not None:
             body = _find_function_body_from_coord(cleaned, coord.line, coord.column)
         if body is None:
-            return _find_function_definitions_regex(source)
+            fallback_functions = _find_function_definitions_regex(source)
+            return _merge_function_definitions(
+                tree_sitter_functions, fallback_functions, merge_fallback=merge_fallback
+            )
         functions.append((ret, name, params, body))
 
-    return functions
+    return _merge_function_definitions(
+        tree_sitter_functions, functions, merge_fallback=merge_fallback
+    )
+
+
+def _merge_function_definitions(
+    preferred: List[Tuple[str, str, str, str]],
+    fallback: List[Tuple[str, str, str, str]],
+    *,
+    merge_fallback: bool = True,
+) -> List[Tuple[str, str, str, str]]:
+    """Merge structural parser results with fallback results by function name."""
+    if not preferred:
+        return fallback
+    if not merge_fallback:
+        return preferred
+    merged = list(preferred)
+    seen = {name for _, name, _, _ in preferred}
+    for function in fallback:
+        _, name, _, _ = function
+        if name in seen:
+            continue
+        merged.append(function)
+        seen.add(name)
+    return merged

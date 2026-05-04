@@ -125,7 +125,7 @@ def find_function_calls(
     known = set(known_functions)
     limitations: List[str] = []
 
-    if analysis_options.mode == "full":
+    if analysis_options.backend == "clang":
         calls, metadata = find_function_calls_with_clang(
             body,
             known_functions,

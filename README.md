@@ -63,10 +63,11 @@ ISP 알고리즘 C-model 분석을 위한 고급 파서로, `CVAS_START` / `CVAS
 ## 📋 요구사항
 
 - Python 3.10 이상
-- 기본 `fast` 분석 런타임은 표준 라이브러리만 사용
-- Python-side dependencies are listed in `requirements.txt`
-- `--analysis-mode full` 사용 시: Python `clang` 바인딩 + 사용 가능한 `libclang`
-- RHEL 8.10에서는 `sudo dnf module install -y llvm-toolset`로 LLVM toolset을 설치할 수 있음
+- Python-side dependencies are listed in `requirements.txt` (`pycparser`, `pytest`)
+- 기본 `fast` 분석은 `pycparser`를 사용하고, AST 파싱이 불가능하면 text fallback으로 최대한 JSON을 생성
+- `--analysis-mode full` 사용 시: 시스템 `gcc`/`g++` 10.2 이상 권장 (GCC dump metadata용)
+- `--analysis-mode full`은 선택 의존성 `tree_sitter`, `tree_sitter_c`, `tree_sitter_cpp`가 있으면 구조 분석에 사용하고, 없으면 기존 fast fallback을 사용
+- RHEL 8.10에서는 GCC toolchain이 기본 제공되지 않으면 `sudo dnf groupinstall -y "Development Tools"`로 설치할 수 있음
 - 설치/가상환경/검증 명령은 [requirements.md](requirements.md) 참고
 
 ---
@@ -93,36 +94,25 @@ python src/cvas_cli.py model.c -o output.json
 `src/cvas_cli.py`가 직접 CLI entrypoint이고, `src/cvas_mvp.py`는 기존 사용자를 위한 호환 wrapper입니다.
 
 ```bash
-python src/cvas_cli.py model.c -o output.json
-```
-
-`src/cvas_cli.py`가 직접 CLI entrypoint이고, `src/cvas_mvp.py`는 기존 사용자를 위한 호환 wrapper입니다.
-
-```bash
 python src/cvas_mvp.py model.c -o output.json
 ```
 
-기본값은 경량 `fast` 모드이며, 기존 `pycparser` 기반 분석을 사용합니다.
+### 분석 모드
+
+CVAS는 사용자-facing 분석 모드를 `fast`와 `full` 두 가지로 유지합니다.
+
+- `fast`: `pycparser` 기반 경량 분석을 먼저 시도하고, AST 파싱이 실패하면 text fallback으로 최대한 결과를 생성합니다.
+- `full`: 선택적으로 tree-sitter C/C++ 구조 파서를 먼저 사용하고, 설치되어 있지 않거나 결과가 없으면 fast 경로로 fallback한 뒤 GCC dump metadata를 추가합니다. clang/libclang은 필수 요구사항이 아닙니다.
 
 ```bash
 python src/cvas_cli.py model.c --analysis-mode fast -o output.json
-```
-
-보다 엄격한 정적 분석 경로가 필요하면 `clang` 기반 `full` 모드를 사용할 수 있습니다.
-
-```bash
 python src/cvas_cli.py model.c --analysis-mode full -o output.json
-python src/cvas_cli.py model.c --analysis-mode full --clang-arg=-Iinclude -o output.json
+python src/cvas_cli.py model.c --analysis-mode full --compile-arg=-Iinclude -o output.json
 ```
 
-`full` 모드를 쓰려면 추가로 다음이 필요합니다.
+`--compile-arg`와 `--compile-db`는 full mode의 중립 compile flag alias입니다. `--clang-arg`와 `--clang-compile-db` 이름도 legacy 호환성을 위해 계속 유지됩니다. 현재 `full` 모드에서는 include/define/undef/system-include/std/language 정보를 재구성해 GCC dump pass에 전달하는 용도로 사용됩니다.
 
-```bash
-source ../.venv/bin/activate
-pip install -r requirements.txt
-```
-
-그리고 시스템에 `libclang`이 설치되어 있어야 합니다. 자세한 예시는 [requirements.md](requirements.md)에 정리했습니다.
+`full` 모드의 GCC dump는 보강 metadata입니다. `gcc`/`g++`가 없거나 compiler diagnostic이 발생해도 일반적으로 JSON 생성 자체를 막지 않고 `gcc_dump.status`에 `ok`, `failed`, `unavailable` 중 하나로 기록합니다.
 
 ### 오프라인 다이어그램 뷰어 (JSON → HTML)
 
@@ -359,9 +349,23 @@ int main() {
   },
   "diagram_hint": {...},
   "note": "Enhanced with P1+P2: complete data flow, CFG, call graph",
-  "analysis_version": "2.0"
+  "analysis_version": "2.0",
+  "analysis_mode": "full",
+  "analysis_backend": "tree-sitter+pycparser+gcc-dump",
+  "project_mode": false,
+  "duplicate_functions": [],
+  "gcc_dump": {
+    "backend": "gcc",
+    "status": "ok",
+    "language": "c",
+    "standard": "c11",
+    "dump_files": ["cvas-gcc-dump.c.015t.cfg"],
+    "diagnostics": []
+  }
 }
 ```
+
+`analysis_mode`와 `analysis_backend`는 정상 모델과 early-return 출력 모두에 포함됩니다. `gcc_dump`는 `--analysis-mode full`에서만 포함되는 선택 metadata이며, `status`는 `ok`, `failed`, `unavailable` 중 하나입니다. CVAS region이 없거나 region 안에서 함수 정의를 찾지 못해도 full mode에서는 GCC dump metadata가 가능한 범위에서 기록됩니다.
 
 ### Block 구조 (CFG 추가)
 
@@ -1145,12 +1149,13 @@ v2.0 JSON can be used by v1.0 tools:
 
 ## 🎓 Learning & Documentation
 
-### New Documentation
+### Maintained Documentation
 
-- ✅ **README_enhanced.md**: Complete v2.0 guide
-- ✅ **MIGRATION_GUIDE.md**: v1→v2 migration
-- ✅ **P1_IMPROVEMENTS.md**: Implementation details
-- ✅ **ROADMAP.md**: Future development
+- ✅ **README.md**: Main user-facing guide and examples
+- ✅ **requirements.md**: Environment setup, dependencies, and verification commands
+- ✅ **docs/full_mode_cpp_design.md**: Current `fast`/`full` backend contract and hardening checklist
+- ✅ **docs/plans/2026-05-04-analysis-backend-shift.md**: Implementation plan/history for the clang-to-GCC-dump backend shift
+- ✅ **docs/cvas_datapath_pipeline_design.md**: Datapath/pipeline design notes
 
 ### Examples
 
@@ -1170,9 +1175,12 @@ v2.0 JSON can be used by v1.0 tools:
 ### Quick Start
 
 ```bash
-# Install (no dependencies!)
+# Install Python dependencies
 git clone <repo>
 cd cvas
+python -m venv ../.venv
+source ../.venv/bin/activate
+pip install -r requirements.txt
 
 # Run enhanced parser
 python src/cvas_mvp.py example.c -o output.json
@@ -1263,6 +1271,12 @@ Under consideration:
 3. **Recursion analysis**
    - Current: Detection only
    - Future: Cycle estimation for bounded recursion
+
+4. **Full mode backend hardening**
+   - Current: clang/libclang은 필수가 아니며 GCC dump 실패는 대체로 metadata로 기록됩니다.
+   - Current: malformed `compile_commands.json` 같은 compile DB 로딩 오류는 후속 hardening 대상입니다.
+   - Current: optional tree-sitter 결과가 일부 함수만 반환하는 경우 fallback 결과와 merge하지 않고 해당 결과를 우선합니다.
+   - Future: compile DB 오류의 완전한 non-fatal 처리, tree-sitter/fallback merge 정책, GNU asm normalization 범위 확대.
 
 ### Workarounds
 

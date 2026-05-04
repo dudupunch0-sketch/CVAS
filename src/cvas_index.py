@@ -58,6 +58,7 @@ def build_project_symbol_index(
             source,
             analysis_options=analysis_options,
             source_path=path,
+            merge_fallback=True,
         )
         for ret, name, params, body in functions:
             if name in function_defs:

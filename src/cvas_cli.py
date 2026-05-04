@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from cvas_analysis import AnalysisOptions
-from cvas_clang import ClangParseError, ClangUnavailableError, ensure_clang_available
+from cvas_clang import ClangParseError
 from cvas_model import CycleRules
 from cvas_pipeline import build_model
 from cvas_index import collect_project_sources
@@ -26,7 +26,7 @@ Examples:
   %(prog)s model.c -o output.json
   %(prog)s model.c --cycle-config cycle.json
   %(prog)s model.c --add-per-cycle 8 --mul-per-cycle 2
-  %(prog)s model.c --analysis-mode full --clang-arg=-Iinclude
+  %(prog)s model.c --analysis-mode full --compile-arg=-Iinclude
         """,
     )
 
@@ -84,23 +84,36 @@ Examples:
         "--analysis-mode",
         choices=["fast", "full"],
         default="fast",
-        help="Select lightweight parsing or clang-backed full analysis",
+        help=(
+            "Select pycparser fast analysis or full analysis with optional "
+            "tree-sitter structure parsing plus GCC dump metadata"
+        ),
     )
     parser.add_argument(
         "--clang-arg",
+        "--compile-arg",
+        dest="compile_arg",
         action="append",
         default=[],
-        help="Additional clang argument used only in full analysis mode",
+        help=(
+            "Compile argument for full analysis; "
+            "include/define/std flags are reused by GCC dump metadata"
+        ),
     )
     parser.add_argument(
         "--language",
         choices=["c", "c++"],
-        help="Override source language used by clang in full analysis mode",
+        help="Override source language used by full analysis and GCC dump metadata",
     )
     parser.add_argument(
         "--clang-compile-db",
+        "--compile-db",
+        dest="compile_db",
         type=Path,
-        help="Path to compile_commands.json used to reconstruct clang flags in full analysis mode",
+        help=(
+            "Path to compile_commands.json used to reconstruct "
+            "include/define/std flags for full analysis"
+        ),
     )
 
     return parser.parse_args()
@@ -194,25 +207,13 @@ def _load_analysis_options(
 ) -> AnalysisOptions:
     options = AnalysisOptions.from_values(
         mode=args.analysis_mode,
-        clang_args=args.clang_arg,
+        clang_args=args.compile_arg,
         language_override=args.language,
         compile_db_path=(
-            str(args.clang_compile_db.resolve()) if args.clang_compile_db else None
+            str(args.compile_db.resolve()) if args.compile_db else None
         ),
         project_root=(str(args.project_root.resolve()) if args.project_root else None),
     )
-    if options.mode == "full":
-        if entry_file.suffix.lower() in {".h", ".hpp", ".hh", ".hxx"}:
-            print(
-                "ERROR: Full analysis mode does not accept header files as the entry input",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        try:
-            ensure_clang_available()
-        except ClangUnavailableError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            sys.exit(1)
     return options
 
 

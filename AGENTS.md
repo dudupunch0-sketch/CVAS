@@ -24,11 +24,11 @@ Run commands from the repository root unless noted otherwise.
 - `python src/cvas_cli.py model.c -o output.json`: parse the CVAS region and emit JSON
 - `python src/cvas_mvp.py model.c -o output.json`: compatibility entrypoint for the same analysis path
 - `python src/cvas_cli.py model.c --analysis-mode fast -o output.json`: explicitly use the default `pycparser` analysis backend
-- `python src/cvas_cli.py model.c --analysis-mode full --clang-arg=-Iinclude -o output.json`: use the `clang`-backed full analysis path with extra compile flags when needed
+- `python src/cvas_cli.py model.c --analysis-mode full --compile-arg=-Iinclude -o output.json`: use optional tree-sitter structure parsing, fast fallback, and non-fatal GCC dump metadata with extra compatible compile flags when needed
 - `python json_to_html.py output.json output.html`: convert JSON to a standalone HTML viewer
 - `python cvas_wrapper.py test_examples.c docs/test_examples_output.html --output-json docs/test_examples_output.json`: refresh the checked-in sample HTML/JSON artifacts
-- `python -m py_compile src/cvas_mvp.py src/cvas_cli.py src/cvas_pipeline.py src/cvas_passes.py json_to_html.py tools/generate_function_io.py`: quick syntax check
-- `../.venv/bin/python -m pytest -q`: run regression tests from `CVAS/` using the workspace-local virtualenv at `/home/dudupunch0/company/cvas/.venv`
+- `python -m py_compile src/cvas_mvp.py src/cvas_cli.py src/cvas_pipeline.py src/cvas_passes.py src/cvas_callgraph.py src/cvas_source.py src/cvas_analysis.py src/cvas_gcc_dump.py src/cvas_treesitter.py src/c_ast_utils.py json_to_html.py tools/generate_function_io.py`: quick syntax check
+- `../.venv/bin/python -m pytest -q`: run regression tests from `CVAS/` using the workspace-local virtualenv at `/home/dudupunch0/company/cvas/.venv`; from `.worktrees/<name>/`, use `../../../.venv/bin/python -m pytest -q`
 - `python tools/generate_function_io.py test_examples.c --llm-provider none`: generate the rule-based `function_io.json`
 - `python tools/generate_function_io.py test_examples.c --llm-provider codex-cli --codex-danger-full-access --codex-timeout-sec 60`: run the Codex-assisted function IO refinement path
 
@@ -46,4 +46,4 @@ Use concise imperative commit messages. When behavior changes, include the valid
 
 ## Agent Notes
 
-Prefer `src/cvas_cli.py` when testing the direct CLI path and keep `src/cvas_mvp.py` as a compatibility layer. Use `--analysis-mode fast` for baseline regressions and `--analysis-mode full` only when `clang`/`libclang` is available. Treat the Diagram tab as the primary operation-flow block diagram, and use CFG / Sequence / call graph views as supporting perspectives.
+Prefer `src/cvas_cli.py` when testing the direct CLI path and keep `src/cvas_mvp.py` as a compatibility layer. Use `--analysis-mode fast` for baseline regressions and `--analysis-mode full` when optional tree-sitter structure parsing plus GCC dump metadata should be exercised without requiring clang/libclang. Treat the Diagram tab as the primary operation-flow block diagram, and use CFG / Sequence / call graph views as supporting perspectives.

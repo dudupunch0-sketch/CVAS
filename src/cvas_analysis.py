@@ -29,7 +29,9 @@ class AnalysisOptions:
 
     @property
     def backend(self) -> str:
-        return "clang" if self.mode == "full" else "pycparser"
+        if self.mode == "full":
+            return "tree-sitter+pycparser+gcc-dump"
+        return "pycparser"
 
     @property
     def compile_db_path_obj(self) -> Optional[Path]:

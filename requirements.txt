@@ -1,13 +1,18 @@
 # CVAS dependency manifest.
 #
-# Fast analysis mode uses only the Python standard library, so no extra pip
-# packages are required for the default runtime.
+# Fast analysis mode is intentionally lightweight. CVAS installs pycparser for
+# AST-backed parsing and also has text fallbacks for partial analysis when AST
+# parsing is unavailable.
 #
-# Install this file with pip to get the Python-side dependencies used by
-# development/test workflows and the optional full analysis backend.
-#
-# Development/test dependency:
+# Install this file with pip to get the parser and development/test dependency.
+
+pycparser
 pytest
+
+# Optional full-mode structural backend, install manually when desired:
+# tree_sitter
+# tree_sitter_c
+# tree_sitter_cpp
 #
-# Optional full-analysis dependency:
-clang
+# Full mode uses the system gcc/g++ executables for GCC dump metadata and does
+# not require Python clang bindings or libclang.
