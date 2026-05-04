@@ -1,10 +1,19 @@
 # CVAS Analysis Backend Shift Plan Review
 
-> For Hermes: this is a review/addendum plan only. Do not implement code from this document unless the user explicitly asks to proceed.
+> Implementation update: the user explicitly asked to proceed with this review/addendum plan. The high-priority and medium-priority hardening items tracked below have been implemented in the follow-up refactor, except for external validation with a real GCC 10.2 binary.
 
 Goal: Re-check the completed `docs/plans/2026-05-04-analysis-backend-shift.md` refactoring plan against the current branch and identify follow-up corrections needed before this is considered production-ready.
 
 Current status: The original plan direction is still sound: public modes should stay `fast` and `full`; `full` should not require clang/libclang; `full` should use optional tree-sitter structure discovery, pycparser/text fallback, and non-fatal GCC dump metadata. The current branch passes the regression suite, but the audit found several plan/code/doc gaps that should be addressed in a follow-up refactor.
+
+Follow-up implementation status:
+- GCC dump compile DB/config failures are non-fatal and reported as `gcc_dump.status = "failed"`.
+- Entry-region tree-sitter discovery receives `source_path=entry_file` for `.cpp`/`.hpp` language inference.
+- Public full-mode compile DB tests assert GCC dump behavior without `require_clang()`.
+- Neutral aliases `--compile-arg` and `--compile-db` are available; legacy `--clang-*` names remain supported.
+- Early-return outputs include `analysis_mode`, `analysis_backend`, and full-mode `gcc_dump` metadata.
+- Tree-sitter partial results are merged with pycparser/regex fallback by function name.
+- GNU asm normalization covers common `asm volatile`, inline `__asm__`, and `__asm__ __volatile__` statement forms.
 
 Validated during review:
 - Branch: `hermes/hermes-466a5a2b`

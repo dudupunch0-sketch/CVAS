@@ -9,38 +9,37 @@ This file supersedes the older clang-hard-fail C++ full-mode plan. The public CV
 
 The detailed current design is in `docs/full_mode_cpp_design.md` and the implementation history is in `docs/plans/2026-05-04-analysis-backend-shift.md`.
 
-## Highest Priority Follow-Ups
+## Completed Hardening Items
 
-1. Make GCC dump metadata fully non-fatal.
-   - Malformed/unreadable `compile_commands.json` should produce `gcc_dump.status = "failed"`, not a traceback.
-   - Add a regression test with invalid compile DB JSON.
+1. GCC dump metadata is fully non-fatal for compile DB/config resolution failures.
+   - Malformed/unreadable `compile_commands.json` produces `gcc_dump.status = "failed"`, not a traceback.
+   - Regression coverage: invalid compile DB JSON.
 
-2. Preserve C++ language inference for full-mode tree-sitter entry discovery.
-   - Pass `entry_file` or resolved language into the entry-region `find_function_definitions(...)` call.
-   - Add a regression test for `.cpp` entry files without `--language c++`.
+2. C++ language inference is preserved for full-mode tree-sitter entry discovery.
+   - The entry-region `find_function_definitions(...)` call receives `source_path=entry_file`.
+   - Regression coverage: `.cpp` entry file without `--language c++`.
 
-3. Strengthen full-mode compile DB tests without clang dependency.
-   - Public full-mode compile DB tests should not call `require_clang()`.
-   - Assert that include paths from compile DB affect `gcc_dump.status` and diagnostics.
+3. Full-mode compile DB tests no longer depend on clang availability.
+   - Public full-mode compile DB tests do not call `require_clang()`.
+   - They assert that include paths from compile DB make `gcc_dump.status == "ok"`.
 
-4. Add neutral CLI aliases.
-   - Keep `--clang-arg` and `--clang-compile-db` for compatibility.
-   - Add `--compile-arg` and `--compile-db` as clearer aliases.
+4. Neutral CLI aliases are available.
+   - `--compile-arg` and `--compile-db` are clearer aliases.
+   - `--clang-arg` and `--clang-compile-db` remain for compatibility.
 
-5. Decide JSON metadata policy for early returns.
-   - Current no-region/no-function outputs are minimal.
-   - Decide whether they should include `analysis_mode`, `analysis_backend`, and possibly `gcc_dump`.
+5. Early-return JSON metadata policy is implemented.
+   - No-region/no-function outputs include `analysis_mode` and `analysis_backend`.
+   - In `full` mode, they also include `gcc_dump` when the metadata pass can run.
 
-## Medium Priority Follow-Ups
+6. Tree-sitter partial-result merge policy is implemented.
+   - Tree-sitter results are preferred, and pycparser/regex fallback fills missing function names.
 
-1. Define tree-sitter partial-result merge policy.
-   - Current behavior treats any non-empty tree-sitter result as authoritative.
-   - Consider merging fallback results by function name.
+7. pycparser normalization handles common GNU asm variants.
+   - Covered forms include `asm volatile (...)`, inline `__asm__`, and `__asm__ __volatile__` statement forms.
 
-2. Expand pycparser normalization.
-   - Add support for `asm volatile (...)`, inline `__asm__`, and `__asm__ __volatile__` forms.
+## Remaining Follow-Ups
 
-3. Run a real GCC 10.2 smoke test.
+1. Run a real GCC 10.2 smoke test.
    - Current CI/dev validation uses the available local GCC.
    - The command shape is intentionally GCC 10.2-compatible, but actual GCC 10.2 execution still needs environment validation.
 

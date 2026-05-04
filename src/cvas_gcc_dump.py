@@ -9,6 +9,10 @@ from typing import Dict, List, Optional
 from cvas_analysis import AnalysisOptions, infer_language_from_path, resolve_clang_config
 
 
+def _default_standard(language: str) -> str:
+    return "c++11" if language == "c++" else "c11"
+
+
 def _compiler_for_language(language: str) -> str:
     return "g++" if language == "c++" else "gcc"
 
@@ -32,7 +36,22 @@ def run_gcc_dump(
     CVAS full mode is intentionally non-fatal: GCC dump enriches diagnostics when
     available, while the main model still comes from the robust fast pipeline.
     """
-    config = resolve_clang_config(analysis_options, source_path=source_path)
+    try:
+        config = resolve_clang_config(analysis_options, source_path=source_path)
+    except Exception as exc:
+        language = analysis_options.language_override or infer_language_from_path(source_path) or "c"
+        compiler = _compiler_for_language(language)
+        return {
+            "backend": compiler,
+            "status": "failed",
+            "language": language,
+            "standard": _default_standard(language),
+            "dump_files": [],
+            "diagnostics": [
+                f"compile configuration failed: {type(exc).__name__}: {exc}"
+            ],
+        }
+
     language = config.language or infer_language_from_path(source_path) or "c"
     compiler = _compiler_for_language(language)
     compiler_path = shutil.which(compiler)

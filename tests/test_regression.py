@@ -68,15 +68,6 @@ def run_cvas_process(
     return result
 
 
-def require_clang() -> None:
-    from cvas_clang import ClangUnavailableError, ensure_clang_available
-
-    try:
-        ensure_clang_available()
-    except ClangUnavailableError as exc:
-        pytest.skip(str(exc))
-
-
 def build_snapshot(model: Dict) -> Dict:
     """Build comparable snapshot from full model.
 
@@ -302,6 +293,225 @@ def test_gcc_dump_command_uses_gcc_10_2_compatible_flags(monkeypatch, tmp_path):
     assert cmd[-1] == str(source_file.resolve())
 
 
+def test_full_mode_malformed_compile_db_reports_gcc_dump_failure(tmp_path):
+    source_file = tmp_path / "model.c"
+    source_file.write_text(
+        "CVAS_START\nint top(void) { return 1; }\nCVAS_END\n",
+        encoding="utf-8",
+    )
+    compile_db = tmp_path / "compile_commands.json"
+    compile_db.write_text("{bad json", encoding="utf-8")
+    output_path = tmp_path / "output.json"
+
+    result = run_cvas_process(
+        source_file,
+        output_path,
+        extra_args=[
+            "--analysis-mode",
+            "full",
+            "--clang-compile-db",
+            str(compile_db),
+        ],
+    )
+
+    assert result.returncode == 0, result.stderr
+    model = json.loads(output_path.read_text(encoding="utf-8"))
+    assert model["gcc_dump"]["status"] == "failed"
+    assert any("compile" in line.lower() for line in model["gcc_dump"]["diagnostics"])
+
+
+def test_full_mode_entry_tree_sitter_receives_entry_path_for_cpp(monkeypatch, tmp_path):
+    import cvas_pipeline
+    import cvas_source
+    from cvas_analysis import AnalysisOptions
+    from cvas_model import CycleRules
+
+    source_file = tmp_path / "model.cpp"
+    source = "CVAS_START\nint top(void) { return 1; }\nCVAS_END\n"
+    source_file.write_text(source, encoding="utf-8")
+    observed = {}
+
+    def fake_tree_sitter(source, *, language=None, source_path=None, region_bounds=None):
+        observed["language"] = language
+        observed["source_path"] = source_path
+        observed["region_bounds"] = region_bounds
+        return [("int", "top", "void", "return 1;")]
+
+    monkeypatch.setattr(
+        cvas_source,
+        "find_function_definitions_with_tree_sitter",
+        fake_tree_sitter,
+    )
+    monkeypatch.setattr(
+        cvas_pipeline,
+        "run_gcc_dump",
+        lambda *args, **kwargs: {
+            "backend": "g++",
+            "status": "ok",
+            "language": "c++",
+            "standard": "c++11",
+            "dump_files": [],
+            "diagnostics": [],
+        },
+    )
+
+    model = cvas_pipeline.build_model(
+        source,
+        CycleRules(),
+        entry_file=source_file,
+        analysis_options=AnalysisOptions(mode="full"),
+    )
+
+    assert model["blocks"]
+    assert observed["source_path"] == source_file
+
+
+def test_full_mode_merges_tree_sitter_with_fallback_functions(monkeypatch):
+    import cvas_source
+    from cvas_analysis import AnalysisOptions
+
+    def fake_tree_sitter(source, *, language=None, source_path=None, region_bounds=None):
+        return [("int", "tree_func", "void", "return 1;")]
+
+    monkeypatch.setattr(
+        cvas_source,
+        "find_function_definitions_with_tree_sitter",
+        fake_tree_sitter,
+    )
+
+    functions = cvas_source.find_function_definitions(
+        "int tree_func(void) { return 1; }\nint fallback_func(void) { return 2; }",
+        analysis_options=AnalysisOptions(mode="full"),
+        merge_fallback=True,
+    )
+
+    assert [name for _, name, _, _ in functions] == ["tree_func", "fallback_func"]
+
+
+def test_full_mode_no_region_output_includes_analysis_metadata(monkeypatch):
+    import cvas_pipeline
+    from cvas_analysis import AnalysisOptions
+    from cvas_model import CycleRules
+
+    monkeypatch.setattr(
+        cvas_pipeline,
+        "run_gcc_dump",
+        lambda *args, **kwargs: {
+            "backend": "gcc",
+            "status": "ok",
+            "language": "c",
+            "standard": "c11",
+            "dump_files": [],
+            "diagnostics": [],
+        },
+    )
+
+    model = cvas_pipeline.build_model(
+        "int top(void) { return 1; }",
+        CycleRules(),
+        entry_file=Path("model.c"),
+        analysis_options=AnalysisOptions(mode="full"),
+    )
+
+    assert model["analysis_mode"] == "full"
+    assert model["analysis_backend"] == "tree-sitter+pycparser+gcc-dump"
+    assert model["gcc_dump"]["status"] == "ok"
+
+
+def test_full_mode_empty_region_output_includes_analysis_metadata(monkeypatch):
+    import cvas_pipeline
+    from cvas_analysis import AnalysisOptions
+    from cvas_model import CycleRules
+
+    monkeypatch.setattr(
+        cvas_pipeline,
+        "run_gcc_dump",
+        lambda *args, **kwargs: {
+            "backend": "gcc",
+            "status": "ok",
+            "language": "c",
+            "standard": "c11",
+            "dump_files": [],
+            "diagnostics": [],
+        },
+    )
+
+    model = cvas_pipeline.build_model(
+        "CVAS_START\nint not_a_definition;\nCVAS_END\n",
+        CycleRules(),
+        entry_file=Path("model.c"),
+        analysis_options=AnalysisOptions(mode="full"),
+    )
+
+    assert model["analysis_mode"] == "full"
+    assert model["analysis_backend"] == "tree-sitter+pycparser+gcc-dump"
+    assert model["gcc_dump"]["status"] == "ok"
+
+
+def test_full_mode_accepts_neutral_compile_arg_and_compile_db_aliases(tmp_path):
+    project_root = tmp_path
+    include_dir = project_root / "include"
+    source_dir = project_root / "src"
+    build_dir = project_root / "build"
+    include_dir.mkdir()
+    source_dir.mkdir()
+    build_dir.mkdir()
+
+    (include_dir / "defs.hpp").write_text(
+        "struct Pixel { int value; };\n",
+        encoding="utf-8",
+    )
+    source_file = source_dir / "model.cpp"
+    source_file.write_text(
+        '#include "defs.hpp"\n'
+        "CVAS_START\n"
+        "int top(int x) {\n"
+        "    Pixel p = {x};\n"
+        "    return p.value;\n"
+        "}\n"
+        "CVAS_END\n",
+        encoding="utf-8",
+    )
+    compile_db = build_dir / "compile_commands.json"
+    compile_db.write_text(
+        json.dumps(
+            [
+                {
+                    "directory": str(project_root),
+                    "arguments": [
+                        "g++",
+                        "-std=c++11",
+                        "-Iinclude",
+                        "-c",
+                        "src/model.cpp",
+                        "-o",
+                        "build/model.o",
+                    ],
+                    "file": "src/model.cpp",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    output_path = project_root / "output.json"
+
+    model = run_cvas(
+        source_file,
+        output_path,
+        extra_args=[
+            "--analysis-mode",
+            "full",
+            "--compile-db",
+            str(compile_db),
+            "--compile-arg=-DLOCAL_ALIAS=1",
+        ],
+    )
+
+    assert {block["block_name"] for block in model["blocks"]} == {"top"}
+    assert model["gcc_dump"]["status"] == "ok"
+    assert "-DLOCAL_ALIAS=1" in model["gcc_dump"]["command"]
+
+
 def test_pycparser_normalization_handles_common_compiler_extensions():
     from c_ast_utils import parse_translation_unit
 
@@ -310,7 +520,10 @@ def test_pycparser_normalization_handles_common_compiler_extensions():
 _Static_assert(sizeof(int) >= 4, "int too small");
 __extension__ typedef unsigned long long u64;
 static __inline__ int add1(int *__restrict x) {
+    asm volatile ("" : : "r"(*x));
     __asm__ volatile ("" : : "r"(*x));
+    __asm__ __volatile__ ("" : : "r"(*x));
+    *x += 1; __asm__ volatile ("" : : "r"(*x));
     return *x + 1;
 }
 """
@@ -378,8 +591,6 @@ def test_resolved_clang_config_user_std_override_wins():
 
 
 def test_full_mode_compile_db_auto_discovery_supplies_include_path():
-    require_clang()
-
     with tempfile.TemporaryDirectory() as tmpdir:
         project_root = Path(tmpdir)
         include_dir = project_root / "include"
@@ -426,11 +637,11 @@ def test_full_mode_compile_db_auto_discovery_supplies_include_path():
         )
 
     assert {block["block_name"] for block in model["blocks"]} == {"top"}
+    assert model["gcc_dump"]["status"] == "ok"
+    assert not any("defs.hpp" in line for line in model["gcc_dump"]["diagnostics"])
 
 
 def test_full_mode_explicit_compile_db_path_is_honored():
-    require_clang()
-
     with tempfile.TemporaryDirectory() as tmpdir:
         project_root = Path(tmpdir)
         include_dir = project_root / "include"
@@ -490,6 +701,8 @@ def test_full_mode_explicit_compile_db_path_is_honored():
         )
 
     assert {block["block_name"] for block in model["blocks"]} == {"top"}
+    assert model["gcc_dump"]["status"] == "ok"
+    assert not any("defs.hpp" in line for line in model["gcc_dump"]["diagnostics"])
 
 
 def test_full_mode_missing_required_include_records_gcc_dump_failure():

@@ -52,7 +52,8 @@ tree-sitter+pycparser+gcc-dump
 source file
   -> extract CVAS_START/CVAS_END region
   -> optional tree-sitter function discovery when tree_sitter packages are installed
-  -> pycparser/text fallback for function discovery and statement analysis
+  -> merge pycparser/text fallback discovery by function name
+  -> pycparser/text fallback for statement analysis
   -> call graph / CFG / flow model generation
   -> gcc/g++ CFG dump metadata attachment
   -> JSON output
@@ -88,20 +89,23 @@ It intentionally avoids newer/non-portable diagnostics features such as:
 
 ## CLI Flag Compatibility
 
-The public CLI still exposes the historical names:
+The public CLI exposes neutral names:
+
+- `--compile-arg`
+- `--compile-db`
+
+It also keeps the historical names as compatibility aliases:
 
 - `--clang-arg`
 - `--clang-compile-db`
 
-These names are compatibility aliases. In the current full-mode path, compatible compile flags from them are reused for GCC dump reconstruction. The main preserved flag families are:
+In the current full-mode path, compatible compile flags from either spelling are reused for GCC dump reconstruction. The main preserved flag families are:
 
 - `-I`
 - `-D`
 - `-U`
 - `-isystem`
 - language/standard hints used to resolve `-x` and `-std=`
-
-A future cleanup can add neutral aliases such as `--compile-arg` and `--compile-db` while keeping the old names for backward compatibility.
 
 ## Output Contract
 
@@ -143,7 +147,7 @@ In `full` mode, it also includes `gcc_dump`:
 
 `diagnostics` can be non-empty even when `status` is `ok`; GCC warnings and dump chatter are preserved as metadata but do not make the enrichment pass fail unless the compiler returns a non-zero status.
 
-Current implementation note: early-return outputs for missing CVAS region or no functions are minimal and may omit backend metadata. If downstream consumers need uniform metadata, harden `src/cvas_pipeline.py` in a follow-up change.
+Early-return outputs for a missing CVAS region or a region with no function definitions still include `analysis_mode` and `analysis_backend`. In `full` mode, they also include `gcc_dump` when the metadata pass can run.
 
 ## Failure Model
 
@@ -152,10 +156,9 @@ The intended policy is:
 - Missing tree-sitter packages: non-fatal fallback to fast analysis.
 - Missing GCC/G++: non-fatal `gcc_dump.status = "unavailable"`.
 - GCC non-zero exit, timeout, or subprocess failure: non-fatal `gcc_dump.status = "failed"`.
+- Compile DB/config resolution failure: non-fatal `gcc_dump.status = "failed"` with diagnostics.
 - GCC warnings with return code 0: keep diagnostics metadata but leave `gcc_dump.status = "ok"`.
 - pycparser parse failure: fallback to text parsing where possible.
-
-Known current hardening gap: malformed or unreadable `compile_commands.json` can still fail before `gcc_dump` metadata is attached. This should be fixed by catching compile DB resolution errors inside the GCC dump metadata path and reporting them as `status = "failed"`.
 
 ## Language and Standard Resolution
 
@@ -167,7 +170,7 @@ CVAS resolves language and standard through `AnalysisOptions` and the legacy com
 - default standard is `c11` for C and `c++11` for C++
 - explicit user `-std=` wins over compile DB `-std=`
 
-Known current hardening gap: entry-region tree-sitter discovery currently receives the extracted region text and may not receive the original `entry_file` path in all paths. For `.cpp` entry files without `--language c++`, this can weaken automatic C++ tree-sitter selection. A follow-up should pass `source_path=entry_file` or a resolved language into that call.
+Entry-region tree-sitter discovery receives `source_path=entry_file` even when the parsed text is the extracted CVAS region. That preserves `.cpp`/`.hpp` language inference without requiring `--language c++`.
 
 ## Testing Contract
 
@@ -195,12 +198,16 @@ When running from the main checkout instead of `.worktrees/<name>`, use `../.ven
 
 ## Follow-Up Hardening Checklist
 
-Before treating this full-mode design as production-grade, address these items:
+Implemented hardening items:
 
-1. Make malformed compile DB handling non-fatal and report it under `gcc_dump`.
-2. Pass entry source path/resolved language into full-mode tree-sitter entry discovery.
-3. Remove clang availability from public full-mode compile DB tests and assert GCC dump behavior directly.
-4. Decide whether tree-sitter partial results should merge with pycparser/regex fallback results.
-5. Expand GNU asm normalization for common `asm volatile`, inline `__asm__`, and `__asm__ __volatile__` forms.
-6. Decide whether early-return JSON should always include `analysis_mode` and `analysis_backend`.
-7. Add neutral CLI aliases for compile args/database while keeping the legacy names.
+1. Malformed compile DB handling is non-fatal and reported under `gcc_dump`.
+2. Entry source path is passed into full-mode tree-sitter entry discovery.
+3. Public full-mode compile DB tests no longer depend on clang availability and assert GCC dump behavior directly.
+4. Tree-sitter partial results are merged with pycparser/regex fallback results by function name.
+5. GNU asm normalization covers common `asm volatile`, inline `__asm__`, and `__asm__ __volatile__` statement forms.
+6. Early-return JSON includes `analysis_mode`, `analysis_backend`, and full-mode `gcc_dump` metadata.
+7. Neutral CLI aliases `--compile-arg` and `--compile-db` are available while legacy names remain supported.
+
+Remaining external validation:
+
+- Run a real GCC 10.2 binary smoke test. The command shape is intentionally GCC 10.2-compatible, but this repository run has only validated against the locally installed GCC.

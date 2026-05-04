@@ -53,6 +53,25 @@ MARKER_END = "CVAS_END"
 # ============================================================================
 
 
+def _attach_analysis_metadata(
+    model: Dict[str, object],
+    *,
+    source: str,
+    entry_file: Optional[Path],
+    analysis_options: AnalysisOptions,
+) -> Dict[str, object]:
+    """Attach stable analysis contract metadata to every model shape."""
+    model["analysis_mode"] = analysis_options.mode
+    model["analysis_backend"] = analysis_options.backend
+    if analysis_options.mode == "full":
+        model["gcc_dump"] = run_gcc_dump(
+            source,
+            source_path=entry_file,
+            analysis_options=analysis_options,
+        )
+    return model
+
+
 def build_model(
     source: str,
     rules: CycleRules,
@@ -69,14 +88,19 @@ def build_model(
         print(
             f"WARNING: {MARKER_START} ~ {MARKER_END} region not found", file=sys.stderr
         )
-        return {
-            "blocks": [],
-            "operations": [],
-            "signals": [],
-            "flow": {"execution_order": [], "parallelism": "unknown"},
-            "diagram_hint": {"layout": "TBD by drawing tool"},
-            "note": f"{MARKER_START}/{MARKER_END} region not found or empty",
-        }
+        return _attach_analysis_metadata(
+            {
+                "blocks": [],
+                "operations": [],
+                "signals": [],
+                "flow": {"execution_order": [], "parallelism": "unknown"},
+                "diagram_hint": {"layout": "TBD by drawing tool"},
+                "note": f"{MARKER_START}/{MARKER_END} region not found or empty",
+            },
+            source=source,
+            entry_file=entry_file,
+            analysis_options=analysis_options,
+        )
 
     if analysis_options.backend == "clang":
         region_bounds = find_cvas_region_bounds(source)
@@ -91,17 +115,24 @@ def build_model(
         region_functions = find_function_definitions(
             region,
             analysis_options=analysis_options,
+            source_path=entry_file,
+            merge_fallback=True,
         )
     if not region_functions:
         print("WARNING: No functions found in CVAS region", file=sys.stderr)
-        return {
-            "blocks": [],
-            "operations": [],
-            "signals": [],
-            "flow": {"execution_order": [], "parallelism": "unknown"},
-            "diagram_hint": {"layout": "TBD by drawing tool"},
-            "note": "No functions found in CVAS region",
-        }
+        return _attach_analysis_metadata(
+            {
+                "blocks": [],
+                "operations": [],
+                "signals": [],
+                "flow": {"execution_order": [], "parallelism": "unknown"},
+                "diagram_hint": {"layout": "TBD by drawing tool"},
+                "note": "No functions found in CVAS region",
+            },
+            source=source,
+            entry_file=entry_file,
+            analysis_options=analysis_options,
+        )
 
     entry_file_str = str(entry_file) if entry_file else "input"
 
@@ -255,15 +286,12 @@ def build_model(
         "diagram_hint": {"layout": "TBD by drawing tool"},
         "note": analysis_note,
         "analysis_version": "2.0",
-        "analysis_mode": analysis_options.mode,
-        "analysis_backend": analysis_options.backend,
         "project_mode": bool(project_sources),
         "duplicate_functions": duplicate_functions,
     }
-    if analysis_options.mode == "full":
-        model["gcc_dump"] = run_gcc_dump(
-            source,
-            source_path=entry_file,
-            analysis_options=analysis_options,
-        )
-    return model
+    return _attach_analysis_metadata(
+        model,
+        source=source,
+        entry_file=entry_file,
+        analysis_options=analysis_options,
+    )

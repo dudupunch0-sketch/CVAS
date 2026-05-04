@@ -49,10 +49,10 @@ def normalize_c_source(source: str) -> str:
         flags=re.MULTILINE | re.DOTALL,
     )
     normalized = re.sub(
-        r"^\s*__(?:asm|asm__)\s*(?:volatile\s*)?\((?:.|\n)*?\)\s*;",
+        r"\b(?:asm|__asm|__asm__)\b\s*(?:(?:volatile|__volatile__)\s*)?\((?:.|\n)*?\)\s*;",
         lambda match: _blank_preserving_newlines(match.group(0)),
         normalized,
-        flags=re.MULTILINE | re.DOTALL,
+        flags=re.DOTALL,
     )
     normalized = re.sub(r"\b__extension__\b", "             ", normalized)
     normalized = re.sub(r"\b__(?:inline|inline__|restrict|restrict__)\b", " ", normalized)
