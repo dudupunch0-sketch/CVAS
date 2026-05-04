@@ -9,8 +9,9 @@ from typing import Dict, List, Optional
 
 import pytest
 
-CVAS_PARSER = Path(__file__).resolve().parents[1] / "src" / "cvas_mvp.py"
-SRC_DIR = Path(__file__).resolve().parents[1] / "src"
+ROOT_DIR = Path(__file__).resolve().parents[1]
+CVAS_PARSER = ROOT_DIR / "src" / "cvas_mvp.py"
+SRC_DIR = ROOT_DIR / "src"
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 if str(SRC_DIR) not in sys.path:
@@ -764,3 +765,61 @@ def test_full_mode_accepts_header_entry_file_with_fast_plus_gcc_dump():
     assert model["analysis_backend"] == "tree-sitter+pycparser+gcc-dump"
     assert {block["block_name"] for block in model["blocks"]} == {"top"}
     assert model["gcc_dump"]["language"] == "c++"
+
+
+def test_html_viewer_surfaces_analysis_metadata_summary():
+    model = {
+        "blocks": [
+            {
+                "block_id": "B1",
+                "block_name": "top",
+                "inputs": ["x"],
+                "outputs": ["return"],
+                "estimated_cycles": 1,
+            }
+        ],
+        "operations": [],
+        "signals": [],
+        "flow": {
+            "execution_order": ["B1"],
+            "parallelism": "sequential",
+            "call_sequence": [],
+            "call_graph": {"nodes": {}},
+        },
+        "analysis_mode": "full",
+        "analysis_backend": "tree-sitter+pycparser+gcc-dump",
+        "analysis_version": "2.0",
+        "project_mode": False,
+        "gcc_dump": {
+            "backend": "gcc",
+            "status": "ok",
+            "language": "c",
+            "standard": "c11",
+            "dump_files": ["model.c.015t.cfg"],
+            "diagnostics": ["warning: demo"],
+            "returncode": 0,
+            "command": "/usr/bin/gcc -fdump-tree-cfg model.c",
+        },
+    }
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        input_path = tmp_path / "full.json"
+        output_path = tmp_path / "full.html"
+        input_path.write_text(json.dumps(model), encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(ROOT_DIR / "json_to_html.py"), str(input_path), str(output_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
+        html = output_path.read_text(encoding="utf-8")
+
+    assert 'id="analysisSummary"' in html
+    assert 'id="analysis-summary-table"' in html
+    assert "renderAnalysisSummary(state);" in html
+    assert '"analysis_mode": "full"' in html
+    assert '"analysis_backend": "tree-sitter+pycparser+gcc-dump"' in html
+    assert '"gcc_dump"' in html
