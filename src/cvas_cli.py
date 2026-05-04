@@ -93,17 +93,23 @@ Examples:
         "--clang-arg",
         action="append",
         default=[],
-        help="Additional clang argument used only in full analysis mode",
+        help=(
+            "Legacy-compatible compile argument for full analysis; "
+            "include/define/std flags are reused by GCC dump metadata"
+        ),
     )
     parser.add_argument(
         "--language",
         choices=["c", "c++"],
-        help="Override source language used by clang in full analysis mode",
+        help="Override source language used by full analysis and GCC dump metadata",
     )
     parser.add_argument(
         "--clang-compile-db",
         type=Path,
-        help="Path to compile_commands.json used to reconstruct clang flags in full analysis mode",
+        help=(
+            "Legacy-compatible path to compile_commands.json used to reconstruct "
+            "include/define/std flags for full analysis"
+        ),
     )
 
     return parser.parse_args()

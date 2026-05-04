@@ -1,11 +1,12 @@
 # CVAS dependency manifest.
 #
-# Fast analysis mode is intentionally lightweight. The workspace test
-# environment provides pycparser; CVAS also has text fallbacks for partial
-# analysis when AST parsing is unavailable.
+# Fast analysis mode is intentionally lightweight. CVAS installs pycparser for
+# AST-backed parsing and also has text fallbacks for partial analysis when AST
+# parsing is unavailable.
 #
-# Install this file with pip to get the development/test dependency.
+# Install this file with pip to get the parser and development/test dependency.
 
+pycparser
 pytest
 
 # Optional full-mode structural backend, install manually when desired:

@@ -1,7 +1,7 @@
 # CVAS Environment Setup
 
-Run all commands from the `CVAS/` repository root.
-The shared virtual environment lives one level up at `../.venv`.
+Run commands from the `CVAS/` repository root unless noted otherwise.
+The shared virtual environment normally lives one level up at `../.venv`. If you are inside a Git worktree under `CVAS/.worktrees/<name>`, use `../../../.venv/bin/python` for verification commands.
 
 ## Base Development Environment
 
@@ -19,7 +19,7 @@ Install the Python dependencies listed in `requirements.txt`:
 pip install -r requirements.txt
 ```
 
-This installs `pytest` for the regression test suite. The default `fast` analysis mode uses `pycparser` when available in the workspace environment and text fallback otherwise.
+This installs `pycparser` for AST-backed C parsing and `pytest` for the regression test suite. The default `fast` analysis mode uses `pycparser` first and text fallback otherwise.
 
 ## Optional Analysis Backends
 
@@ -67,6 +67,7 @@ After the virtual environment is active:
   src/cvas_analysis.py \
   src/cvas_gcc_dump.py \
   src/cvas_treesitter.py \
+  src/c_ast_utils.py \
   json_to_html.py \
   tools/generate_function_io.py
 ```
