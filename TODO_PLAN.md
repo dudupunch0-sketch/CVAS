@@ -39,9 +39,11 @@ The detailed current design is in `docs/full_mode_cpp_design.md` and the impleme
 
 ## Remaining Follow-Ups
 
-1. Run a real GCC 10.2 smoke test.
-   - Current CI/dev validation uses the available local GCC.
-   - The command shape is intentionally GCC 10.2-compatible, but actual GCC 10.2 execution still needs environment validation.
+1. Run the separate server GCC 10.2 validation task.
+   - Task document: `docs/plans/server-gcc-10-2-validation.md`
+   - Current CI/dev validation uses local and Docker GCC versions, including Docker GCC 14.2.
+   - The command shape is intentionally GCC 10.2-compatible, but actual GCC 10.2 execution is a deployment-readiness check for the target server/RHEL-style environment.
+   - This follow-up does not block or reopen the completed PR #52 implementation plan.
 
 ## Validation Commands
 

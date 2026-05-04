@@ -211,4 +211,4 @@ Implemented hardening items:
 
 Remaining external validation:
 
-- Run a real GCC 10.2 binary smoke test. The command shape is intentionally GCC 10.2-compatible, but this repository run has only validated against the locally installed GCC.
+- Run the separate server GCC 10.2 validation task documented in `docs/plans/server-gcc-10-2-validation.md`. Local and Docker validation has covered available GCC versions, including Docker GCC 14.2, but a real GCC 10.2 server run remains a deployment-readiness check rather than a blocker for the completed PR #52 implementation.
