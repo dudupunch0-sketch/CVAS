@@ -27,10 +27,12 @@ Run commands from the repository root unless noted otherwise.
 - `python src/cvas_cli.py model.c --analysis-mode full --compile-arg=-Iinclude -o output.json`: use optional tree-sitter structure parsing, fast fallback, and non-fatal GCC dump metadata with extra compatible compile flags when needed
 - `python json_to_html.py output.json output.html`: convert JSON to a standalone HTML viewer
 - `python cvas_wrapper.py test_examples.c docs/test_examples_output.html --output-json docs/test_examples_output.json`: refresh the checked-in sample HTML/JSON artifacts
-- `python -m py_compile src/cvas_mvp.py src/cvas_cli.py src/cvas_pipeline.py src/cvas_passes.py src/cvas_callgraph.py src/cvas_source.py src/cvas_analysis.py src/cvas_gcc_dump.py src/cvas_treesitter.py src/c_ast_utils.py json_to_html.py tools/generate_function_io.py`: quick syntax check
+- `python -m py_compile src/cvas_mvp.py src/cvas_cli.py src/cvas_pipeline.py src/cvas_passes.py src/cvas_callgraph.py src/cvas_source.py src/cvas_analysis.py src/cvas_gcc_dump.py src/cvas_treesitter.py src/c_ast_utils.py json_to_html.py tools/generate_function_io.py tools/function_io_contract.py`: quick syntax check
 - `../.venv/bin/python -m pytest -q`: run regression tests from `CVAS/` using the workspace-local virtualenv at `/home/dudupunch0/company/cvas/.venv`; from `.worktrees/<name>/`, use `../../../.venv/bin/python -m pytest -q`
 - `python tools/generate_function_io.py test_examples.c --llm-provider none`: generate the rule-based `function_io.json`
-- `python tools/generate_function_io.py test_examples.c --llm-provider codex-cli --codex-danger-full-access --codex-timeout-sec 60`: run the Codex-assisted function IO refinement path
+- `python tools/generate_function_io.py test_examples.c --llm-provider agent-file --agent-task-dir .cvas/agent_tasks/function_io --agent-output-dir .cvas/agent_outputs/function_io`: write a CLI-agent function IO handoff package without calling an LLM
+- `python tools/generate_function_io.py test_examples.c --import-agent-output .cvas/agent_outputs/function_io/function_io.v2.json --validation-report .cvas/agent_outputs/function_io/validation_report.json --merge-missing-from-rule`: import and validate a CLI-agent function IO output
+- `python tools/generate_function_io.py test_examples.c --llm-provider codex-cli --codex-danger-full-access --codex-timeout-sec 60`: run the legacy Codex-assisted function IO refinement path
 
 ## Coding Style & Naming Conventions
 

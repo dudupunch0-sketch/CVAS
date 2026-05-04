@@ -157,7 +157,36 @@ python cvas_wrapper.py test_examples.c docs/test_examples_output.html --output-j
 python tools/generate_function_io.py model.c --llm-provider none
 ```
 
-Codex CLI 기반 하이브리드 생성:
+권장 방식은 CVAS가 정적 스냅샷과 CLI-agent 작업 패키지를 파일로 만들고, 별도 CLI agent가 그 파일을 읽어 최종 의미 보강 JSON을 작성한 뒤 CVAS가 다시 import/validate하는 흐름입니다. 이 방식은 CVAS 실행 환경에서 외부 LLM이나 Codex/Claude/OpenCode CLI를 직접 호출하지 않습니다.
+
+```bash
+python tools/generate_function_io.py model.c \
+  --llm-provider agent-file \
+  --agent-task-dir .cvas/agent_tasks/function_io \
+  --agent-output-dir .cvas/agent_outputs/function_io
+```
+
+생성되는 작업 패키지에는 `README.md`, refine/verify prompt, `function_io_refine.input.json`, `function_io.schema.json`, `static_summary.json`, `source_excerpt.c`가 포함됩니다. CLI agent는 패키지의 지시를 따라 보통 다음 파일을 작성합니다.
+
+```text
+.cvas/agent_outputs/function_io/function_io.v1.json
+.cvas/agent_outputs/function_io/function_io.v2.json
+```
+
+agent 결과를 최종 `function_io.json`으로 가져오고 검증 리포트를 남기려면:
+
+```bash
+python tools/generate_function_io.py model.c \
+  --import-agent-output .cvas/agent_outputs/function_io/function_io.v2.json \
+  --out function_io.json \
+  --validation-report .cvas/agent_outputs/function_io/validation_report.json \
+  --validation-mode warn \
+  --merge-missing-from-rule
+```
+
+`--validation-mode strict`는 schema/static reference 오류나 static snapshot 함수 누락이 있으면 non-zero로 종료하므로 CI나 handoff 검증에 적합합니다. `--merge-missing-from-rule`를 쓰면 agent가 생략한 함수를 deterministic rule map으로 명시적으로 채웁니다. `coverage_gaps`는 validation report에 보존되어 CVAS가 놓친 정적 facts를 후속 검토할 수 있습니다.
+
+기존 자동화 방식도 유지됩니다. Codex CLI 기반 legacy hybrid 생성:
 
 ```bash
 python tools/generate_function_io.py model.c --llm-provider codex-cli
@@ -172,7 +201,7 @@ python tools/generate_function_io.py model.c \
   --codex-timeout-sec 60
 ```
 
-OpenAI-compatible API 기반 하이브리드 생성 (`responses` / `chat` 선택 가능):
+OpenAI-compatible API 기반 legacy hybrid 생성 (`responses` / `chat` 선택 가능):
 
 ```bash
 python tools/generate_function_io.py model.c \
