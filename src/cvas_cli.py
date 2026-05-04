@@ -84,7 +84,10 @@ Examples:
         "--analysis-mode",
         choices=["fast", "full"],
         default="fast",
-        help="Select lightweight parsing or clang-backed full analysis",
+        help=(
+            "Select pycparser fast analysis or full analysis with optional "
+            "tree-sitter structure parsing plus GCC dump metadata"
+        ),
     )
     parser.add_argument(
         "--clang-arg",
@@ -201,18 +204,6 @@ def _load_analysis_options(
         ),
         project_root=(str(args.project_root.resolve()) if args.project_root else None),
     )
-    if options.mode == "full":
-        if entry_file.suffix.lower() in {".h", ".hpp", ".hh", ".hxx"}:
-            print(
-                "ERROR: Full analysis mode does not accept header files as the entry input",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        try:
-            ensure_clang_available()
-        except ClangUnavailableError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            sys.exit(1)
     return options
 
 

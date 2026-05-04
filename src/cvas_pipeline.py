@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from cvas_analysis import AnalysisOptions
 from cvas_callgraph import build_call_graph, build_call_sequence, find_function_calls
+from cvas_gcc_dump import run_gcc_dump
 from cvas_index import build_project_symbol_index
 from cvas_model import (
     Block,
@@ -77,7 +78,7 @@ def build_model(
             "note": f"{MARKER_START}/{MARKER_END} region not found or empty",
         }
 
-    if analysis_options.mode == "full":
+    if analysis_options.backend == "clang":
         region_bounds = find_cvas_region_bounds(source)
         region_functions = find_function_definitions(
             source,
@@ -246,7 +247,7 @@ def build_model(
             f"; duplicate function definitions detected: {len(duplicate_functions)}"
         )
 
-    return {
+    model: Dict[str, object] = {
         "blocks": [serialize_block(block) for block in blocks],
         "operations": [asdict(operation) for operation in operations],
         "signals": [asdict(signal) for signal in signals],
@@ -259,3 +260,10 @@ def build_model(
         "project_mode": bool(project_sources),
         "duplicate_functions": duplicate_functions,
     }
+    if analysis_options.mode == "full":
+        model["gcc_dump"] = run_gcc_dump(
+            source,
+            source_path=entry_file,
+            analysis_options=analysis_options,
+        )
+    return model

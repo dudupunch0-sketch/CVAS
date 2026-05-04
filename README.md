@@ -65,8 +65,9 @@ ISP 알고리즘 C-model 분석을 위한 고급 파서로, `CVAS_START` / `CVAS
 - Python 3.10 이상
 - 기본 `fast` 분석 런타임은 표준 라이브러리만 사용
 - Python-side dependencies are listed in `requirements.txt`
-- `--analysis-mode full` 사용 시: Python `clang` 바인딩 + 사용 가능한 `libclang`
-- RHEL 8.10에서는 `sudo dnf module install -y llvm-toolset`로 LLVM toolset을 설치할 수 있음
+- `--analysis-mode full` 사용 시: 시스템 `gcc`/`g++` 10.2 이상 권장 (GCC dump metadata용)
+- `--analysis-mode full`은 선택 의존성 `tree_sitter`, `tree_sitter_c`, `tree_sitter_cpp`가 있으면 구조 분석에 사용하고, 없으면 기존 fast fallback을 사용
+- RHEL 8.10에서는 GCC toolchain이 기본 제공되지 않으면 `sudo dnf groupinstall -y "Development Tools"`로 설치할 수 있음
 - 설치/가상환경/검증 명령은 [requirements.md](requirements.md) 참고
 
 ---
@@ -102,27 +103,16 @@ python src/cvas_cli.py model.c -o output.json
 python src/cvas_mvp.py model.c -o output.json
 ```
 
-기본값은 경량 `fast` 모드이며, 기존 `pycparser` 기반 분석을 사용합니다.
+`fast` 모드는 경량 `pycparser` 기반 분석을 사용합니다.
+`full` 모드는 선택적으로 tree-sitter C/C++ 구조 파서를 먼저 사용하고, 설치되어 있지 않거나 결과가 없으면 fast 경로로 fallback한 뒤 GCC dump metadata를 추가합니다. clang/libclang은 필수로 요구하지 않습니다.
 
 ```bash
 python src/cvas_cli.py model.c --analysis-mode fast -o output.json
-```
-
-보다 엄격한 정적 분석 경로가 필요하면 `clang` 기반 `full` 모드를 사용할 수 있습니다.
-
-```bash
 python src/cvas_cli.py model.c --analysis-mode full -o output.json
 python src/cvas_cli.py model.c --analysis-mode full --clang-arg=-Iinclude -o output.json
 ```
 
-`full` 모드를 쓰려면 추가로 다음이 필요합니다.
-
-```bash
-source ../.venv/bin/activate
-pip install -r requirements.txt
-```
-
-그리고 시스템에 `libclang`이 설치되어 있어야 합니다. 자세한 예시는 [requirements.md](requirements.md)에 정리했습니다.
+`--clang-arg`와 `--clang-compile-db` 이름은 호환성을 위해 유지되며, full 모드의 GCC dump include/define/std flag 재구성에도 사용됩니다.
 
 ### 오프라인 다이어그램 뷰어 (JSON → HTML)
 
