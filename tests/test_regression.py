@@ -72,18 +72,9 @@ def run_cvas_process(
 def build_snapshot(model: Dict) -> Dict:
     """Build comparable snapshot from full model.
 
-    Extracts only the fields we want to compare in regression tests:
-    - operations
-    - signals
-    - cfg structures
-    - call_graph
-    - operation summaries and cycle estimates
-
-    Args:
-        model: Full CVAS model dict
-
-    Returns:
-        Snapshot dict with comparable fields
+    Extracts only the stable fields we want to compare in broad regression tests.
+    Schema v3 adds semantic signal fields that are covered by targeted tests, so
+    the legacy signal endpoint shape is retained here to avoid noisy snapshots.
     """
     cfg_snapshot = []
     blocks_summary = []
@@ -107,9 +98,23 @@ def build_snapshot(model: Dict) -> Dict:
             }
         )
 
+    legacy_signal_fields = [
+        "source_id",
+        "source_type",
+        "destination_id",
+        "destination_type",
+        "signal_name",
+        "direction",
+        "comment",
+    ]
+    signals_snapshot = [
+        {field: signal.get(field) for field in legacy_signal_fields if field in signal}
+        for signal in model.get("signals", [])
+    ]
+
     return {
         "operations": model.get("operations", []),
-        "signals": model.get("signals", []),
+        "signals": signals_snapshot,
         "blocks_summary": blocks_summary,
         "cfg": cfg_snapshot,
         "call_graph": model.get("flow", {}).get("call_graph"),
@@ -135,6 +140,11 @@ def get_all_fixtures() -> List[str]:
 
     for c_file in FIXTURES_DIR.rglob("*.c"):
         rel_path = c_file.relative_to(FIXTURES_DIR)
+        # Schema contract fixtures keep full producer JSON as their expected
+        # example for targeted v3 tests. Broad regression snapshots compare a
+        # compact legacy subset, so do not reuse those full-contract examples.
+        if rel_path.parts and rel_path.parts[0] == "schema":
+            continue
         base_name = rel_path.with_suffix("")
         expected_file = c_file.with_suffix(".expected.json")
 

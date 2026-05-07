@@ -110,6 +110,17 @@ class Signal:
     signal_name: str
     direction: str
     comment: Optional[str] = None
+    signal_id: Optional[str] = None
+    kind: Optional[str] = None
+    role: Optional[str] = None
+    call_id: Optional[str] = None
+    arg_index: Optional[int] = None
+    param: Optional[str] = None
+    expr: Optional[str] = None
+    target: Optional[str] = None
+    source_function: Optional[str] = None
+    destination_function: Optional[str] = None
+    provenance: Optional[Dict[str, object]] = None
 
 
 @dataclass
@@ -182,6 +193,55 @@ class CallGraph:
 
 
 @dataclass
+class CallArgument:
+    """One argument bound to a call instance."""
+
+    arg_index: int
+    param: Optional[str]
+    expr: str
+    signal_id: Optional[str] = None
+
+
+@dataclass
+class CallAssignment:
+    """Return assignment target for a call instance."""
+
+    target: str
+    signal_id: Optional[str] = None
+
+
+@dataclass
+class CallInstance:
+    """Stable direct-call occurrence used by schema v3."""
+
+    call_id: str
+    caller_block_id: str
+    caller_function: str
+    callee_block_id: Optional[str]
+    callee_function: str
+    ordinal_in_caller: int
+    args: List[CallArgument]
+    assigned: Optional[CallAssignment]
+    source: Dict[str, object]
+    provenance: Dict[str, object]
+
+
+@dataclass
+class SequenceTimelineStep:
+    """Viewer-ready sequence timeline step for one function block."""
+
+    step_id: str
+    order_index: int
+    block_id: str
+    function: str
+    call_ids_as_caller: List[str]
+    call_ids_as_callee: List[str]
+    incoming_signal_ids: List[str]
+    outgoing_signal_ids: List[str]
+    read_write_summary: Dict[str, List[Dict[str, object]]]
+
+
+@dataclass
 class Block:
     """Function represented as a block with CFG."""
 
@@ -204,8 +264,13 @@ class Flow:
 
     execution_order: List[str]
     parallelism: str = "unknown"
+    execution_order_meta: Optional[Dict[str, object]] = None
     call_graph: Optional[CallGraph] = None
     call_sequence: Optional[List[Dict[str, object]]] = None
+    call_instances: Optional[List[CallInstance]] = None
+    sequence_timeline: Optional[List[SequenceTimelineStep]] = None
+    function_io: Optional[Dict[str, object]] = None
+    dependencies: Optional[Dict[str, List[Dict[str, object]]]] = None
     function_defs: Optional[Dict[str, Dict[str, object]]] = None
     unresolved_calls: Optional[List[Dict[str, object]]] = None
     external_symbols: Optional[List[Dict[str, object]]] = None

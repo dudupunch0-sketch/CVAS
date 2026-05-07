@@ -5,6 +5,162 @@ import sys
 from pathlib import Path
 
 REQUIRED_FIELDS = ["blocks", "operations", "signals", "flow"]
+SEQUENCE_RENDERER_V3_TIMELINE = "v3_timeline"
+SEQUENCE_RENDERER_LEGACY = "legacy"
+
+
+def detect_schema_version(data: dict) -> str:
+    if isinstance(data, dict):
+        schema_version = data.get("schema_version")
+        if isinstance(schema_version, str):
+            return schema_version
+        schema = data.get("schema")
+        if isinstance(schema, dict) and isinstance(schema.get("version"), str):
+            return schema["version"]
+    return "2.x"
+
+
+def normalize_function_io_map(value: object) -> dict:
+    if not isinstance(value, dict):
+        return {}
+    functions = value.get("functions")
+    if isinstance(functions, dict):
+        return functions
+    return value
+
+
+def get_viewer_function_io_map(data: dict, state_function_io: object | None = None) -> dict:
+    flow = data.get("flow") if isinstance(data, dict) else {}
+    flow_io = flow.get("function_io") if isinstance(flow, dict) else None
+    flow_map = normalize_function_io_map(flow_io)
+    if flow_map:
+        return flow_map
+    return normalize_function_io_map(state_function_io)
+
+
+def select_sequence_renderer(data: dict) -> str:
+    flow = data.get("flow") if isinstance(data, dict) else {}
+    timeline = flow.get("sequence_timeline") if isinstance(flow, dict) else None
+    if isinstance(timeline, list) and timeline:
+        return SEQUENCE_RENDERER_V3_TIMELINE
+    return SEQUENCE_RENDERER_LEGACY
+
+
+def _as_string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if item is not None]
+
+
+def _call_arg_expr_by_param(call: dict) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    args = call.get("args") if isinstance(call, dict) else None
+    if not isinstance(args, list):
+        return mapping
+    for index, arg in enumerate(args):
+        if isinstance(arg, dict):
+            param = arg.get("param")
+            expr = arg.get("expr")
+            if param is not None and expr is not None:
+                mapping[str(param)] = str(expr)
+        elif arg is not None:
+            callee_params = call.get("callee_params")
+            if isinstance(callee_params, list) and index < len(callee_params):
+                mapping[str(callee_params[index])] = str(arg)
+    return mapping
+
+
+def _map_call_io_names(names: list[str], call: dict | None) -> list[str]:
+    if not call:
+        return names
+    expr_by_param = _call_arg_expr_by_param(call)
+    return [expr_by_param.get(name, name) for name in names]
+
+
+def _timeline_io_item(
+    function_io_map: dict,
+    function_name: object,
+    role: str,
+    call: dict | None = None,
+) -> dict | None:
+    if not isinstance(function_name, str) or not function_name:
+        return None
+    io = function_io_map.get(function_name)
+    if not isinstance(io, dict):
+        return None
+    contract_reads = _as_string_list(io.get("reads"))
+    contract_writes = _as_string_list(io.get("writes"))
+    item = {
+        "role": role,
+        "function": function_name,
+        "reads": _map_call_io_names(contract_reads, call),
+        "writes": _map_call_io_names(contract_writes, call),
+        "contract_reads": contract_reads,
+        "contract_writes": contract_writes,
+    }
+    if call:
+        item["call_id"] = call.get("call_id")
+        item["caller_function"] = call.get("caller_function")
+        item["callee_function"] = call.get("callee_function")
+        assigned = call.get("assigned")
+        if isinstance(assigned, dict) and assigned.get("target") is not None:
+            item["assigned"] = str(assigned["target"])
+    provenance = io.get("provenance")
+    if isinstance(provenance, dict):
+        item["provenance"] = provenance
+    return item
+
+
+def summarize_timeline_function_io(
+    data: dict,
+    step: dict,
+    state_function_io: object | None = None,
+) -> list[dict]:
+    """Return the v3 viewer's function_io summary for a timeline card."""
+    function_io_map = get_viewer_function_io_map(data, state_function_io)
+    if not function_io_map or not isinstance(step, dict):
+        return []
+
+    flow = data.get("flow") if isinstance(data, dict) else {}
+    call_instances = flow.get("call_instances") if isinstance(flow, dict) else []
+    call_by_id = {
+        call.get("call_id"): call
+        for call in call_instances
+        if isinstance(call, dict) and call.get("call_id") is not None
+    }
+
+    summary: list[dict] = []
+    step_item = _timeline_io_item(function_io_map, step.get("function"), "step_function")
+    if step_item:
+        summary.append(step_item)
+
+    for call_id in step.get("call_ids_as_caller", []) or []:
+        call = call_by_id.get(call_id)
+        if not isinstance(call, dict):
+            continue
+        item = _timeline_io_item(
+            function_io_map,
+            call.get("callee_function"),
+            "called_function",
+            call,
+        )
+        if item:
+            summary.append(item)
+
+    for call_id in step.get("call_ids_as_callee", []) or []:
+        call = call_by_id.get(call_id)
+        if not isinstance(call, dict):
+            continue
+        item = _timeline_io_item(
+            function_io_map,
+            call.get("caller_function"),
+            "caller_function",
+            call,
+        )
+        if item:
+            summary.append(item)
+
+    return summary
 
 
 def load_json(path: Path) -> dict:
@@ -214,6 +370,101 @@ def build_html(data: dict) -> str:
       cursor: grab;
       user-select: none;
       line-height: 1.15;
+    }}
+    .timeline-shell {{
+      display: grid;
+      gap: 12px;
+      max-width: 1120px;
+      padding-bottom: 24px;
+    }}
+    .timeline-banner {{
+      border: 1px solid #bfdbfe;
+      background: #eff6ff;
+      color: #1e3a8a;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.45;
+    }}
+    .timeline-card {{
+      border: 1px solid #d1d5db;
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+    }}
+    .timeline-card-header {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }}
+    .timeline-title {{
+      font-weight: 700;
+      color: #111827;
+      font-size: 14px;
+    }}
+    .timeline-subtitle {{
+      color: #6b7280;
+      font-size: 12px;
+      margin-top: 2px;
+    }}
+    .timeline-badges {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: flex-end;
+    }}
+    .timeline-pill {{
+      border-radius: 999px;
+      background: #f3f4f6;
+      color: #374151;
+      padding: 3px 8px;
+      font-size: 11px;
+      border: 1px solid #e5e7eb;
+    }}
+    .timeline-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+    }}
+    .timeline-section {{
+      border: 1px dashed #e5e7eb;
+      border-radius: 8px;
+      padding: 8px;
+      background: #f9fafb;
+      min-height: 54px;
+    }}
+    .timeline-section-title {{
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }}
+    .timeline-list {{
+      display: grid;
+      gap: 5px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }}
+    .timeline-item {{
+      border-radius: 6px;
+      border: 1px solid #e5e7eb;
+      background: #fff;
+      padding: 5px 6px;
+      font-size: 12px;
+      line-height: 1.35;
+    }}
+    .timeline-empty {{
+      color: #9ca3af;
+      font-size: 12px;
+    }}
+    .timeline-mono {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 11px;
+      color: #334155;
     }}
     .seq-count {{
       background: #111827;
@@ -1055,7 +1306,257 @@ def build_html(data: dict) -> str:
     }}
   }}
 
+  function detectSchemaVersion(data) {{
+    if (data && typeof data.schema_version === "string") return data.schema_version;
+    if (data && data.schema && typeof data.schema.version === "string") return data.schema.version;
+    return "2.x";
+  }}
+
+  function normalizeFunctionIOMap(value) {{
+    if (!value || typeof value !== "object") return {{}};
+    if (value.functions && typeof value.functions === "object") return value.functions;
+    return value;
+  }}
+
+  function getFunctionIOMap(state) {{
+    const flowIO = state.data && state.data.flow ? state.data.flow.function_io : null;
+    const flowMap = normalizeFunctionIOMap(flowIO);
+    if (Object.keys(flowMap).length) return flowMap;
+    return normalizeFunctionIOMap(state.functionIO);
+  }}
+
   function renderSequence(state) {{
+    const flow = state.data && state.data.flow ? state.data.flow : {{}};
+    const timeline = Array.isArray(flow.sequence_timeline) ? flow.sequence_timeline : [];
+    const schemaVersion = detectSchemaVersion(state.data);
+    if (timeline.length) {{
+      renderSequenceTimelineV3(state, timeline, schemaVersion);
+      return;
+    }}
+    renderLegacySequence(state, schemaVersion);
+  }}
+
+  function appendTimelineText(parent, className, text) {{
+    const el = document.createElement("div");
+    el.className = className;
+    el.textContent = text;
+    parent.appendChild(el);
+    return el;
+  }}
+
+  function appendTimelinePill(parent, text) {{
+    const pill = document.createElement("span");
+    pill.className = "timeline-pill";
+    pill.textContent = text;
+    parent.appendChild(pill);
+    return pill;
+  }}
+
+  function makeIdMap(items, key) {{
+    const map = new Map();
+    if (!Array.isArray(items)) return map;
+    items.forEach(item => {{
+      if (item && item[key] != null) map.set(item[key], item);
+    }});
+    return map;
+  }}
+
+  function renderTimelineList(parent, title, items, renderItem) {{
+    const section = document.createElement("div");
+    section.className = "timeline-section";
+    appendTimelineText(section, "timeline-section-title", title);
+    if (!items.length) {{
+      appendTimelineText(section, "timeline-empty", "none");
+    }} else {{
+      const list = document.createElement("ul");
+      list.className = "timeline-list";
+      items.forEach(item => {{
+        const li = document.createElement("li");
+        li.className = "timeline-item";
+        renderItem(li, item);
+        list.appendChild(li);
+      }});
+      section.appendChild(list);
+    }}
+    parent.appendChild(section);
+  }}
+
+  function describeCall(call) {{
+    if (!call) return "missing call";
+    const callId = call.call_id || "unknown";
+    const caller = call.caller_function || call.caller_block_id || "?";
+    const callee = call.callee_function || call.callee_block_id || "?";
+    const args = Array.isArray(call.args) ? call.args.map(arg => arg.expr || "?").join(", ") : "";
+    const assigned = call.assigned && call.assigned.target ? ` -> ${{call.assigned.target}}` : "";
+    return `${{callId}}: ${{caller}} -> ${{callee}}(${{args}})${{assigned}}`;
+  }}
+
+  function describeSignal(signal) {{
+    if (!signal) return "missing signal";
+    const signalId = signal.signal_id || "unknown";
+    const callId = signal.call_id ? ` call_id=${{signal.call_id}}` : "";
+    const kind = signal.kind || signal.comment || "signal";
+    const expr = signal.expr || signal.signal_name || "";
+    const param = signal.param ? ` param=${{signal.param}}` : "";
+    return `${{signalId}}: ${{kind}} ${{expr}}${{param}}${{callId}}`;
+  }}
+
+  function asStringList(value) {{
+    if (!Array.isArray(value)) return [];
+    return value.filter(item => item != null).map(item => String(item));
+  }}
+
+  function callArgExprByParam(call) {{
+    const map = new Map();
+    const args = call && Array.isArray(call.args) ? call.args : [];
+    args.forEach((arg, index) => {{
+      if (arg && typeof arg === "object") {{
+        if (arg.param != null && arg.expr != null) map.set(String(arg.param), String(arg.expr));
+      }} else if (arg != null && Array.isArray(call.callee_params) && index < call.callee_params.length) {{
+        map.set(String(call.callee_params[index]), String(arg));
+      }}
+    }});
+    return map;
+  }}
+
+  function mapCallIONames(names, call) {{
+    if (!call) return names;
+    const exprByParam = callArgExprByParam(call);
+    return names.map(name => exprByParam.has(name) ? exprByParam.get(name) : name);
+  }}
+
+  function timelineIOItem(functionIOMap, functionName, role, call) {{
+    if (!functionName || !functionIOMap || !functionIOMap[functionName]) return null;
+    const io = functionIOMap[functionName];
+    if (!io || typeof io !== "object") return null;
+    const contractReads = asStringList(io.reads);
+    const contractWrites = asStringList(io.writes);
+    const item = {{
+      role,
+      function: functionName,
+      reads: mapCallIONames(contractReads, call),
+      writes: mapCallIONames(contractWrites, call),
+      contract_reads: contractReads,
+      contract_writes: contractWrites
+    }};
+    if (call) {{
+      item.call_id = call.call_id || "";
+      item.caller_function = call.caller_function || "";
+      item.callee_function = call.callee_function || "";
+      if (call.assigned && call.assigned.target != null) item.assigned = String(call.assigned.target);
+    }}
+    if (io.provenance && typeof io.provenance === "object") item.provenance = io.provenance;
+    return item;
+  }}
+
+  function summarizeTimelineFunctionIO(state, step, functionIOMap, callById) {{
+    const summary = [];
+    if (!step || !functionIOMap || !Object.keys(functionIOMap).length) return summary;
+    const stepItem = timelineIOItem(functionIOMap, step.function, "step_function", null);
+    if (stepItem) summary.push(stepItem);
+    (step.call_ids_as_caller || []).forEach(callId => {{
+      const call = callById.get(callId);
+      if (!call) return;
+      const item = timelineIOItem(functionIOMap, call.callee_function, "called_function", call);
+      if (item) summary.push(item);
+    }});
+    (step.call_ids_as_callee || []).forEach(callId => {{
+      const call = callById.get(callId);
+      if (!call) return;
+      const item = timelineIOItem(functionIOMap, call.caller_function, "caller_function", call);
+      if (item) summary.push(item);
+    }});
+    return summary;
+  }}
+
+  function describeTimelineIO(item) {{
+    const callId = item.call_id ? ` ${{item.call_id}}` : "";
+    const reads = item.reads && item.reads.length ? item.reads.join(", ") : "-";
+    const writes = item.writes && item.writes.length ? item.writes.join(", ") : "-";
+    const assigned = item.assigned ? ` return->${{item.assigned}}` : "";
+    const provenance = item.provenance && item.provenance.source ? ` source=${{item.provenance.source}}` : "";
+    return `${{item.role}}${{callId}} ${{item.function}} reads: ${{reads}}; writes: ${{writes}}${{assigned}}${{provenance}}`;
+  }}
+
+  function renderSequenceTimelineV3(state, timeline, schemaVersion) {{
+    const container = document.getElementById("sequence-content");
+    const flow = state.data.flow || {{}};
+    const callById = makeIdMap(flow.call_instances || [], "call_id");
+    const signalById = makeIdMap(state.data.signals || [], "signal_id");
+    const functionIOMap = getFunctionIOMap(state);
+
+    container.innerHTML = "";
+    const shell = document.createElement("div");
+    shell.className = "timeline-shell";
+    shell.dataset.schemaVersion = schemaVersion;
+
+    const banner = document.createElement("div");
+    banner.className = "timeline-banner";
+    const metaKind = flow.execution_order_meta && flow.execution_order_meta.kind ? flow.execution_order_meta.kind : "static_block_order";
+    banner.textContent = `Schema ${{schemaVersion}} sequence_timeline: one card per execution_order block. Order kind: ${{metaKind}}. v2 call_sequence remains available as a fallback.`;
+    shell.appendChild(banner);
+
+    timeline.forEach(step => {{
+      const card = document.createElement("article");
+      card.className = "timeline-card";
+      card.dataset.stepId = step.step_id || "";
+      card.dataset.blockId = step.block_id || "";
+      card.dataset.function = step.function || "";
+
+      const header = document.createElement("div");
+      header.className = "timeline-card-header";
+      const titleWrap = document.createElement("div");
+      appendTimelineText(titleWrap, "timeline-title", `${{step.order_index}}. ${{step.function || "unknown"}}`);
+      appendTimelineText(titleWrap, "timeline-subtitle", `${{step.block_id || "unknown block"}} · ${{step.step_id || "no step_id"}}`);
+      header.appendChild(titleWrap);
+
+      const badges = document.createElement("div");
+      badges.className = "timeline-badges";
+      appendTimelinePill(badges, `caller calls: ${{(step.call_ids_as_caller || []).length}}`);
+      appendTimelinePill(badges, `callee calls: ${{(step.call_ids_as_callee || []).length}}`);
+      appendTimelinePill(badges, `incoming signal_id: ${{(step.incoming_signal_ids || []).length}}`);
+      appendTimelinePill(badges, `outgoing signal_id: ${{(step.outgoing_signal_ids || []).length}}`);
+      header.appendChild(badges);
+      card.appendChild(header);
+
+      const grid = document.createElement("div");
+      grid.className = "timeline-grid";
+
+      renderTimelineList(grid, "Call IDs as caller", step.call_ids_as_caller || [], (li, callId) => {{
+        li.classList.add("timeline-mono");
+        li.textContent = describeCall(callById.get(callId));
+      }});
+      renderTimelineList(grid, "Call IDs as callee", step.call_ids_as_callee || [], (li, callId) => {{
+        li.classList.add("timeline-mono");
+        li.textContent = describeCall(callById.get(callId));
+      }});
+      renderTimelineList(grid, "Incoming signal_id", step.incoming_signal_ids || [], (li, signalId) => {{
+        li.classList.add("timeline-mono");
+        li.textContent = describeSignal(signalById.get(signalId));
+      }});
+      renderTimelineList(grid, "Outgoing signal_id", step.outgoing_signal_ids || [], (li, signalId) => {{
+        li.classList.add("timeline-mono");
+        li.textContent = describeSignal(signalById.get(signalId));
+      }});
+      renderTimelineList(
+        grid,
+        "Function IO reads/writes",
+        summarizeTimelineFunctionIO(state, step, functionIOMap, callById),
+        (li, item) => {{
+          li.classList.add("timeline-mono");
+          li.textContent = describeTimelineIO(item);
+        }}
+      );
+
+      card.appendChild(grid);
+      shell.appendChild(card);
+    }});
+
+    container.appendChild(shell);
+    applySequenceZoom(state);
+  }}
+
+  function renderLegacySequence(state, schemaVersion) {{
     const container = document.getElementById("sequence-content");
     const seq = (state.data.flow && state.data.flow.call_sequence) ? state.data.flow.call_sequence : [];
     if (!seq.length) {{
@@ -1099,7 +1600,7 @@ def build_html(data: dict) -> str:
       `;
       canvas.appendChild(svg);
 
-      const layout = buildSequenceLayout(group.function, calls, state.functionIO);
+      const layout = buildSequenceLayout(group.function, calls, getFunctionIOMap(state));
       const nodes = layout.nodes;
       const edges = layout.edges;
       canvas._seqEdges = edges;
@@ -1158,7 +1659,7 @@ def build_html(data: dict) -> str:
       `;
       canvas.appendChild(svg);
 
-      const layout = buildSequenceLayout(group.function, calls, state.functionIO);
+      const layout = buildSequenceLayout(group.function, calls, getFunctionIOMap(state));
       const nodes = layout.nodes;
       const edges = layout.edges;
       canvas._seqEdges = edges;
