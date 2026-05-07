@@ -115,6 +115,11 @@ Examples:
             "include/define/std flags for full analysis"
         ),
     )
+    parser.add_argument(
+        "--function-io",
+        type=Path,
+        help="Optional function_io.json to embed under flow.function_io for schema v3 Sequence rendering",
+    )
 
     return parser.parse_args()
 
@@ -217,6 +222,23 @@ def _load_analysis_options(
     return options
 
 
+def _load_function_io(args: argparse.Namespace) -> Optional[dict]:
+    if not args.function_io:
+        return None
+    if not args.function_io.exists():
+        print(f"ERROR: Function IO file '{args.function_io}' not found", file=sys.stderr)
+        sys.exit(1)
+    try:
+        payload = json.loads(args.function_io.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"ERROR: Invalid function IO file: {exc}", file=sys.stderr)
+        sys.exit(1)
+    if not isinstance(payload, dict):
+        print("ERROR: Function IO file must contain a JSON object", file=sys.stderr)
+        sys.exit(1)
+    return payload
+
+
 def main() -> None:
     """Main CLI entry point."""
     args = parse_args()
@@ -224,6 +246,7 @@ def main() -> None:
     entry_file, source = _load_source(args)
     analysis_options = _load_analysis_options(args, entry_file)
     project_sources = _load_project_sources(args, entry_file)
+    function_io = _load_function_io(args)
 
     if project_sources:
         print(
@@ -245,6 +268,7 @@ def main() -> None:
             project_sources=project_sources,
             entry_file=entry_file,
             analysis_options=analysis_options,
+            function_io=function_io,
         )
     except ClangParseError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

@@ -45,6 +45,7 @@ class FunctionAnalysisResult:
     operations: List[Operation]
     signals: List[Signal]
     calls: List[CallReference]
+    call_metadata: Dict[str, object]
     unresolved_calls: List[Dict[str, object]]
     external_symbols: List[Dict[str, object]]
     function_def_meta: Dict[str, object]
@@ -690,7 +691,7 @@ def analyze_function(
             }
         )
 
-    calls, _ = find_function_calls(
+    calls, call_metadata = find_function_calls(
         body,
         known_functions,
         analysis_options=analysis_options,
@@ -703,6 +704,7 @@ def analyze_function(
         operations=block_operations,
         signals=op_edges,
         calls=calls,
+        call_metadata=call_metadata,
         unresolved_calls=unresolved_calls,
         external_symbols=external_symbols,
         function_def_meta={"file": source_file},

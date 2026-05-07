@@ -1,0 +1,799 @@
+{
+  "schema_version": "3.0",
+  "schema": {
+    "name": "cvas-analysis",
+    "version": "3.0",
+    "compatibility": {
+      "preserves_v2_fields": true
+    }
+  },
+  "blocks": [
+    {
+      "block_id": "B1",
+      "block_name": "inc",
+      "inputs": [
+        "x"
+      ],
+      "outputs": [
+        "return"
+      ],
+      "internal_ops_summary": {
+        "add": 1,
+        "compare": 0,
+        "logic": 0,
+        "multiply": 0,
+        "copy": 0,
+        "shift": 0,
+        "bitwise": 0,
+        "const": 0,
+        "load": 0,
+        "store": 0
+      },
+      "estimated_cycles": 1,
+      "note": "no loop/conditional detected; internal op nodes emitted",
+      "position": {
+        "x": "TBD by drawing tool",
+        "y": "TBD by drawing tool"
+      },
+      "cfg": {
+        "function_name": "inc",
+        "basic_blocks": [
+          {
+            "block_id": "inc_b1",
+            "parent_function": "inc",
+            "operations": [],
+            "predecessors": [],
+            "successors": [
+              "inc_b2"
+            ],
+            "block_type": "entry"
+          },
+          {
+            "block_id": "inc_b2",
+            "parent_function": "inc",
+            "operations": [
+              "B1_op_1"
+            ],
+            "predecessors": [
+              "inc_b1"
+            ],
+            "successors": [
+              "inc_b3"
+            ],
+            "block_type": "sequential"
+          },
+          {
+            "block_id": "inc_b3",
+            "parent_function": "inc",
+            "operations": [],
+            "predecessors": [
+              "inc_b2"
+            ],
+            "successors": [],
+            "block_type": "exit"
+          }
+        ],
+        "entry_block": "inc_b1",
+        "exit_blocks": [
+          "inc_b3"
+        ],
+        "loops": [],
+        "has_branches": false,
+        "max_nesting_depth": 0,
+        "analysis_confidence": "high",
+        "analysis_coverage": 1.0,
+        "analysis_limitations": []
+      }
+    },
+    {
+      "block_id": "B2",
+      "block_name": "top",
+      "inputs": [
+        "a"
+      ],
+      "outputs": [
+        "return"
+      ],
+      "internal_ops_summary": {
+        "add": 0,
+        "compare": 0,
+        "logic": 0,
+        "multiply": 0,
+        "copy": 2,
+        "shift": 0,
+        "bitwise": 0,
+        "const": 0,
+        "load": 0,
+        "store": 0
+      },
+      "estimated_cycles": 1,
+      "note": "no loop/conditional detected; internal op nodes emitted",
+      "position": {
+        "x": "TBD by drawing tool",
+        "y": "TBD by drawing tool"
+      },
+      "cfg": {
+        "function_name": "top",
+        "basic_blocks": [
+          {
+            "block_id": "top_b1",
+            "parent_function": "top",
+            "operations": [],
+            "predecessors": [],
+            "successors": [
+              "top_b2"
+            ],
+            "block_type": "entry"
+          },
+          {
+            "block_id": "top_b2",
+            "parent_function": "top",
+            "operations": [
+              "B2_op_1",
+              "B2_op_2"
+            ],
+            "predecessors": [
+              "top_b1"
+            ],
+            "successors": [
+              "top_b3"
+            ],
+            "block_type": "sequential"
+          },
+          {
+            "block_id": "top_b3",
+            "parent_function": "top",
+            "operations": [],
+            "predecessors": [
+              "top_b2"
+            ],
+            "successors": [],
+            "block_type": "exit"
+          }
+        ],
+        "entry_block": "top_b1",
+        "exit_blocks": [
+          "top_b3"
+        ],
+        "loops": [],
+        "has_branches": false,
+        "max_nesting_depth": 0,
+        "analysis_confidence": "high",
+        "analysis_coverage": 1.0,
+        "analysis_limitations": []
+      }
+    }
+  ],
+  "operations": [
+    {
+      "op_id": "B1_op_1",
+      "op_type": "add",
+      "inputs": [
+        "x",
+        "1"
+      ],
+      "outputs": [
+        "return"
+      ],
+      "parent_block_id": "B1",
+      "source_line": null
+    },
+    {
+      "op_id": "B2_op_1",
+      "op_type": "copy",
+      "inputs": [
+        "a"
+      ],
+      "outputs": [
+        "first"
+      ],
+      "parent_block_id": "B2",
+      "source_line": null
+    },
+    {
+      "op_id": "B2_op_2",
+      "op_type": "copy",
+      "inputs": [
+        "first"
+      ],
+      "outputs": [
+        "second"
+      ],
+      "parent_block_id": "B2",
+      "source_line": null
+    }
+  ],
+  "signals": [
+    {
+      "source_id": "B1",
+      "source_type": "block",
+      "destination_id": "B1_op_1",
+      "destination_type": "operation",
+      "signal_name": "x",
+      "direction": "internal",
+      "comment": "operand flow",
+      "signal_id": "S_B1_0001",
+      "kind": "internal_operand",
+      "role": "read",
+      "source_function": "inc",
+      "destination_function": "inc",
+      "provenance": {
+        "source": "static",
+        "confidence": "medium"
+      }
+    },
+    {
+      "source_id": "B1_op_1",
+      "source_type": "operation",
+      "destination_id": "B1",
+      "destination_type": "block",
+      "signal_name": "return",
+      "direction": "out",
+      "comment": "return flow",
+      "signal_id": "S_B1_0002",
+      "kind": "function_return",
+      "role": "write",
+      "source_function": "inc",
+      "destination_function": "inc",
+      "provenance": {
+        "source": "static",
+        "confidence": "medium"
+      }
+    },
+    {
+      "source_id": "B2",
+      "source_type": "block",
+      "destination_id": "B2_op_1",
+      "destination_type": "operation",
+      "signal_name": "a",
+      "direction": "internal",
+      "comment": "copy flow",
+      "signal_id": "S_B2_0001",
+      "kind": "internal_copy",
+      "role": "read",
+      "source_function": "top",
+      "destination_function": "top",
+      "provenance": {
+        "source": "static",
+        "confidence": "medium"
+      }
+    },
+    {
+      "source_id": "B2_op_1",
+      "source_type": "operation",
+      "destination_id": "B2_op_2",
+      "destination_type": "operation",
+      "signal_name": "first",
+      "direction": "internal",
+      "comment": "copy flow",
+      "signal_id": "S_B2_0002",
+      "kind": "internal_copy",
+      "role": "read",
+      "source_function": "top",
+      "destination_function": "top",
+      "provenance": {
+        "source": "static",
+        "confidence": "medium"
+      }
+    },
+    {
+      "source_id": "B2_op_2",
+      "source_type": "operation",
+      "destination_id": "B2",
+      "destination_type": "block",
+      "signal_name": "return",
+      "direction": "out",
+      "comment": "direct return",
+      "signal_id": "S_B2_0003",
+      "kind": "function_return",
+      "role": "write",
+      "source_function": "top",
+      "destination_function": "top",
+      "provenance": {
+        "source": "static",
+        "confidence": "medium"
+      }
+    },
+    {
+      "source_id": "B2",
+      "source_type": "block",
+      "destination_id": "B1",
+      "destination_type": "block",
+      "signal_name": "a",
+      "direction": "in",
+      "comment": "argument flow",
+      "signal_id": "S_C_B2_0001_ARG_0",
+      "kind": "call_argument",
+      "role": "read",
+      "call_id": "C_B2_0001",
+      "arg_index": 0,
+      "param": "x",
+      "expr": "a",
+      "source_function": "top",
+      "destination_function": "inc",
+      "provenance": {
+        "source": "static",
+        "confidence": "high"
+      }
+    },
+    {
+      "source_id": "B1",
+      "source_type": "block",
+      "destination_id": "B2",
+      "destination_type": "block",
+      "signal_name": "first",
+      "direction": "out",
+      "comment": "return flow",
+      "signal_id": "S_C_B2_0001_RET",
+      "kind": "call_return",
+      "role": "write",
+      "call_id": "C_B2_0001",
+      "expr": "first",
+      "target": "first",
+      "source_function": "inc",
+      "destination_function": "top",
+      "provenance": {
+        "source": "static",
+        "confidence": "high"
+      }
+    },
+    {
+      "source_id": "B2",
+      "source_type": "block",
+      "destination_id": "B1",
+      "destination_type": "block",
+      "signal_name": "first",
+      "direction": "in",
+      "comment": "argument flow",
+      "signal_id": "S_C_B2_0002_ARG_0",
+      "kind": "call_argument",
+      "role": "read",
+      "call_id": "C_B2_0002",
+      "arg_index": 0,
+      "param": "x",
+      "expr": "first",
+      "source_function": "top",
+      "destination_function": "inc",
+      "provenance": {
+        "source": "static",
+        "confidence": "high"
+      }
+    },
+    {
+      "source_id": "B1",
+      "source_type": "block",
+      "destination_id": "B2",
+      "destination_type": "block",
+      "signal_name": "second",
+      "direction": "out",
+      "comment": "return flow",
+      "signal_id": "S_C_B2_0002_RET",
+      "kind": "call_return",
+      "role": "write",
+      "call_id": "C_B2_0002",
+      "expr": "second",
+      "target": "second",
+      "source_function": "inc",
+      "destination_function": "top",
+      "provenance": {
+        "source": "static",
+        "confidence": "high"
+      }
+    }
+  ],
+  "flow": {
+    "execution_order": [
+      "B1",
+      "B2"
+    ],
+    "parallelism": "sequential",
+    "execution_order_meta": {
+      "kind": "static_block_order",
+      "source": "analysis_queue",
+      "description": "Static function/block order used for visualization; not a dynamic runtime trace."
+    },
+    "call_graph": {
+      "nodes": {
+        "inc": {
+          "function_name": "inc",
+          "block_id": "B1",
+          "callers": [
+            "top",
+            "top"
+          ],
+          "callees": [],
+          "call_depth": 0,
+          "is_recursive": false,
+          "self_cycles": 1,
+          "total_cycles": 1
+        },
+        "top": {
+          "function_name": "top",
+          "block_id": "B2",
+          "callers": [],
+          "callees": [
+            "inc",
+            "inc"
+          ],
+          "call_depth": 0,
+          "is_recursive": false,
+          "self_cycles": 1,
+          "total_cycles": 3
+        }
+      },
+      "entry_functions": [
+        "top"
+      ],
+      "call_chains": [
+        [
+          "top",
+          "inc"
+        ]
+      ],
+      "critical_path": [
+        "top",
+        "inc"
+      ],
+      "max_depth": 0,
+      "has_recursion": false,
+      "analysis_confidence": "high",
+      "analysis_coverage": 1.0,
+      "analysis_limitations": []
+    },
+    "call_sequence": [
+      {
+        "function": "inc",
+        "calls": []
+      },
+      {
+        "function": "top",
+        "calls": [
+          {
+            "callee": "inc",
+            "args": [
+              "a"
+            ],
+            "assigned": "first",
+            "callee_params": [
+              "x"
+            ],
+            "call_id": "C_B2_0001"
+          },
+          {
+            "callee": "inc",
+            "args": [
+              "first"
+            ],
+            "assigned": "second",
+            "callee_params": [
+              "x"
+            ],
+            "call_id": "C_B2_0002"
+          }
+        ]
+      }
+    ],
+    "call_instances": [
+      {
+        "call_id": "C_B2_0001",
+        "caller_block_id": "B2",
+        "caller_function": "top",
+        "callee_block_id": "B1",
+        "callee_function": "inc",
+        "ordinal_in_caller": 1,
+        "args": [
+          {
+            "arg_index": 0,
+            "param": "x",
+            "expr": "a",
+            "signal_id": "S_C_B2_0001_ARG_0"
+          }
+        ],
+        "assigned": {
+          "target": "first",
+          "signal_id": "S_C_B2_0001_RET"
+        },
+        "source": {
+          "file": "tests/fixtures/schema/sequence_timeline_v3.c",
+          "line": null,
+          "column": null,
+          "text": "first = inc(a)"
+        },
+        "provenance": {
+          "source": "static",
+          "parser": "ast",
+          "confidence": "high"
+        }
+      },
+      {
+        "call_id": "C_B2_0002",
+        "caller_block_id": "B2",
+        "caller_function": "top",
+        "callee_block_id": "B1",
+        "callee_function": "inc",
+        "ordinal_in_caller": 2,
+        "args": [
+          {
+            "arg_index": 0,
+            "param": "x",
+            "expr": "first",
+            "signal_id": "S_C_B2_0002_ARG_0"
+          }
+        ],
+        "assigned": {
+          "target": "second",
+          "signal_id": "S_C_B2_0002_RET"
+        },
+        "source": {
+          "file": "tests/fixtures/schema/sequence_timeline_v3.c",
+          "line": null,
+          "column": null,
+          "text": "second = inc(first)"
+        },
+        "provenance": {
+          "source": "static",
+          "parser": "ast",
+          "confidence": "high"
+        }
+      }
+    ],
+    "sequence_timeline": [
+      {
+        "step_id": "T_0000_B1",
+        "order_index": 0,
+        "block_id": "B1",
+        "function": "inc",
+        "call_ids_as_caller": [],
+        "call_ids_as_callee": [
+          "C_B2_0001",
+          "C_B2_0002"
+        ],
+        "incoming_signal_ids": [
+          "S_B1_0002",
+          "S_C_B2_0001_ARG_0",
+          "S_C_B2_0002_ARG_0"
+        ],
+        "outgoing_signal_ids": [
+          "S_B1_0001",
+          "S_C_B2_0001_RET",
+          "S_C_B2_0002_RET"
+        ],
+        "read_write_summary": {
+          "reads_from_other": [
+            {
+              "signal_id": "S_C_B2_0001_ARG_0",
+              "call_id": "C_B2_0001",
+              "kind": "call_argument",
+              "role": "read",
+              "signal_name": "a",
+              "expr": "a",
+              "param": "x",
+              "arg_index": 0,
+              "other_block_id": "B2",
+              "other_function": "top"
+            },
+            {
+              "signal_id": "S_C_B2_0002_ARG_0",
+              "call_id": "C_B2_0002",
+              "kind": "call_argument",
+              "role": "read",
+              "signal_name": "first",
+              "expr": "first",
+              "param": "x",
+              "arg_index": 0,
+              "other_block_id": "B2",
+              "other_function": "top"
+            }
+          ],
+          "read_by_other": [],
+          "writes_to_other": [
+            {
+              "signal_id": "S_C_B2_0001_RET",
+              "call_id": "C_B2_0001",
+              "kind": "call_return",
+              "role": "write",
+              "signal_name": "first",
+              "expr": "first",
+              "target": "first",
+              "other_block_id": "B2",
+              "other_function": "top"
+            },
+            {
+              "signal_id": "S_C_B2_0002_RET",
+              "call_id": "C_B2_0002",
+              "kind": "call_return",
+              "role": "write",
+              "signal_name": "second",
+              "expr": "second",
+              "target": "second",
+              "other_block_id": "B2",
+              "other_function": "top"
+            }
+          ],
+          "written_by_other": []
+        }
+      },
+      {
+        "step_id": "T_0001_B2",
+        "order_index": 1,
+        "block_id": "B2",
+        "function": "top",
+        "call_ids_as_caller": [
+          "C_B2_0001",
+          "C_B2_0002"
+        ],
+        "call_ids_as_callee": [],
+        "incoming_signal_ids": [
+          "S_B2_0003",
+          "S_C_B2_0001_RET",
+          "S_C_B2_0002_RET"
+        ],
+        "outgoing_signal_ids": [
+          "S_B2_0001",
+          "S_C_B2_0001_ARG_0",
+          "S_C_B2_0002_ARG_0"
+        ],
+        "read_write_summary": {
+          "reads_from_other": [],
+          "read_by_other": [
+            {
+              "signal_id": "S_C_B2_0001_ARG_0",
+              "call_id": "C_B2_0001",
+              "kind": "call_argument",
+              "role": "read",
+              "signal_name": "a",
+              "expr": "a",
+              "param": "x",
+              "arg_index": 0,
+              "other_block_id": "B1",
+              "other_function": "inc"
+            },
+            {
+              "signal_id": "S_C_B2_0002_ARG_0",
+              "call_id": "C_B2_0002",
+              "kind": "call_argument",
+              "role": "read",
+              "signal_name": "first",
+              "expr": "first",
+              "param": "x",
+              "arg_index": 0,
+              "other_block_id": "B1",
+              "other_function": "inc"
+            }
+          ],
+          "writes_to_other": [],
+          "written_by_other": [
+            {
+              "signal_id": "S_C_B2_0001_RET",
+              "call_id": "C_B2_0001",
+              "kind": "call_return",
+              "role": "write",
+              "signal_name": "first",
+              "expr": "first",
+              "target": "first",
+              "other_block_id": "B1",
+              "other_function": "inc"
+            },
+            {
+              "signal_id": "S_C_B2_0002_RET",
+              "call_id": "C_B2_0002",
+              "kind": "call_return",
+              "role": "write",
+              "signal_name": "second",
+              "expr": "second",
+              "target": "second",
+              "other_block_id": "B1",
+              "other_function": "inc"
+            }
+          ]
+        }
+      }
+    ],
+    "function_io": {
+      "source": "rule-based",
+      "functions": {
+        "inc": {
+          "reads": [
+            "x"
+          ],
+          "writes": [],
+          "provenance": {
+            "source": "rule-based",
+            "confidence": "medium"
+          }
+        },
+        "top": {
+          "reads": [
+            "a"
+          ],
+          "writes": [],
+          "provenance": {
+            "source": "rule-based",
+            "confidence": "medium"
+          }
+        }
+      }
+    },
+    "dependencies": {
+      "inter_block": [
+        {
+          "signal_id": "S_C_B2_0001_ARG_0",
+          "source_id": "B2",
+          "destination_id": "B1",
+          "kind": "call_argument",
+          "role": "read",
+          "call_id": "C_B2_0001"
+        },
+        {
+          "signal_id": "S_C_B2_0001_RET",
+          "source_id": "B1",
+          "destination_id": "B2",
+          "kind": "call_return",
+          "role": "write",
+          "call_id": "C_B2_0001"
+        },
+        {
+          "signal_id": "S_C_B2_0002_ARG_0",
+          "source_id": "B2",
+          "destination_id": "B1",
+          "kind": "call_argument",
+          "role": "read",
+          "call_id": "C_B2_0002"
+        },
+        {
+          "signal_id": "S_C_B2_0002_RET",
+          "source_id": "B1",
+          "destination_id": "B2",
+          "kind": "call_return",
+          "role": "write",
+          "call_id": "C_B2_0002"
+        }
+      ],
+      "call_instance": [
+        {
+          "call_id": "C_B2_0001",
+          "signal_id": "S_C_B2_0001_ARG_0",
+          "kind": "call_argument",
+          "role": "read"
+        },
+        {
+          "call_id": "C_B2_0001",
+          "signal_id": "S_C_B2_0001_RET",
+          "kind": "call_return",
+          "role": "write"
+        },
+        {
+          "call_id": "C_B2_0002",
+          "signal_id": "S_C_B2_0002_ARG_0",
+          "kind": "call_argument",
+          "role": "read"
+        },
+        {
+          "call_id": "C_B2_0002",
+          "signal_id": "S_C_B2_0002_RET",
+          "kind": "call_return",
+          "role": "write"
+        }
+      ]
+    },
+    "function_defs": {
+      "inc": {
+        "file": "tests/fixtures/schema/sequence_timeline_v3.c"
+      },
+      "top": {
+        "file": "tests/fixtures/schema/sequence_timeline_v3.c"
+      }
+    },
+    "unresolved_calls": [],
+    "external_symbols": []
+  },
+  "diagram_hint": {
+    "layout": "TBD by drawing tool"
+  },
+  "note": "Enhanced with P1+P2 and schema v3 sequence timeline",
+  "analysis_version": "2.0",
+  "project_mode": false,
+  "duplicate_functions": [],
+  "analysis_mode": "fast",
+  "analysis_backend": "pycparser"
+}

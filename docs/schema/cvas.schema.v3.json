@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/cvas/cvas.schema.v3.json",
+  "title": "CVAS analysis JSON schema v3",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "schema",
+    "blocks",
+    "operations",
+    "signals",
+    "flow"
+  ],
+  "properties": {
+    "schema_version": { "const": "3.0" },
+    "schema": {
+      "type": "object",
+      "required": ["name", "version", "compatibility"],
+      "properties": {
+        "name": { "const": "cvas-analysis" },
+        "version": { "const": "3.0" },
+        "compatibility": {
+          "type": "object",
+          "required": ["preserves_v2_fields"],
+          "properties": {
+            "preserves_v2_fields": { "const": true }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "analysis_version": { "type": "string" },
+    "blocks": { "type": "array", "items": { "type": "object" } },
+    "operations": { "type": "array", "items": { "type": "object" } },
+    "signals": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/signal" }
+    },
+    "flow": {
+      "type": "object",
+      "required": [
+        "execution_order",
+        "execution_order_meta",
+        "call_instances",
+        "sequence_timeline"
+      ],
+      "properties": {
+        "execution_order": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "execution_order_meta": {
+          "type": "object",
+          "required": ["kind", "source", "description"],
+          "properties": {
+            "kind": { "const": "static_block_order" },
+            "source": { "type": "string" },
+            "description": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "parallelism": { "type": "string" },
+        "call_graph": { "type": "object" },
+        "call_sequence": { "type": "array" },
+        "function_defs": { "type": "object" },
+        "call_instances": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/call_instance" }
+        },
+        "sequence_timeline": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sequence_timeline_step" }
+        },
+        "function_io": { "type": "object" },
+        "dependencies": { "type": "object" },
+        "unresolved_calls": { "type": "array" },
+        "external_symbols": { "type": "array" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "source": { "type": "string" },
+        "parser": { "type": "string" },
+        "confidence": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "call_argument": {
+      "type": "object",
+      "required": ["arg_index", "expr", "signal_id"],
+      "properties": {
+        "arg_index": { "type": "integer", "minimum": 0 },
+        "param": { "type": ["string", "null"] },
+        "expr": { "type": "string" },
+        "signal_id": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "call_assignment": {
+      "type": "object",
+      "required": ["target", "signal_id"],
+      "properties": {
+        "target": { "type": "string" },
+        "signal_id": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "call_instance": {
+      "type": "object",
+      "required": [
+        "call_id",
+        "caller_block_id",
+        "caller_function",
+        "callee_block_id",
+        "callee_function",
+        "ordinal_in_caller",
+        "args",
+        "source",
+        "provenance"
+      ],
+      "properties": {
+        "call_id": { "type": "string", "pattern": "^C_" },
+        "caller_block_id": { "type": "string" },
+        "caller_function": { "type": "string" },
+        "callee_block_id": { "type": ["string", "null"] },
+        "callee_function": { "type": "string" },
+        "ordinal_in_caller": { "type": "integer", "minimum": 1 },
+        "args": { "type": "array", "items": { "$ref": "#/$defs/call_argument" } },
+        "assigned": { "anyOf": [{ "$ref": "#/$defs/call_assignment" }, { "type": "null" }] },
+        "source": { "type": "object" },
+        "provenance": { "$ref": "#/$defs/provenance" }
+      },
+      "additionalProperties": true
+    },
+    "signal": {
+      "type": "object",
+      "required": [
+        "source_id",
+        "source_type",
+        "destination_id",
+        "destination_type",
+        "signal_name",
+        "direction"
+      ],
+      "properties": {
+        "signal_id": { "type": "string" },
+        "kind": { "type": "string" },
+        "role": { "type": "string" },
+        "call_id": { "type": "string" },
+        "arg_index": { "type": "integer" },
+        "param": { "type": ["string", "null"] },
+        "expr": { "type": "string" },
+        "target": { "type": "string" },
+        "source_function": { "type": "string" },
+        "destination_function": { "type": "string" },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "source_id": { "type": "string" },
+        "source_type": { "type": "string" },
+        "destination_id": { "type": "string" },
+        "destination_type": { "type": "string" },
+        "signal_name": { "type": "string" },
+        "direction": { "type": "string" },
+        "comment": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "sequence_timeline_step": {
+      "type": "object",
+      "required": [
+        "step_id",
+        "order_index",
+        "block_id",
+        "function",
+        "call_ids_as_caller",
+        "call_ids_as_callee",
+        "incoming_signal_ids",
+        "outgoing_signal_ids",
+        "read_write_summary"
+      ],
+      "properties": {
+        "step_id": { "type": "string", "pattern": "^T_" },
+        "order_index": { "type": "integer", "minimum": 0 },
+        "block_id": { "type": "string" },
+        "function": { "type": "string" },
+        "call_ids_as_caller": { "type": "array", "items": { "type": "string" } },
+        "call_ids_as_callee": { "type": "array", "items": { "type": "string" } },
+        "incoming_signal_ids": { "type": "array", "items": { "type": "string" } },
+        "outgoing_signal_ids": { "type": "array", "items": { "type": "string" } },
+        "read_write_summary": { "type": "object" }
+      },
+      "additionalProperties": true
+    }
+  }
+}
