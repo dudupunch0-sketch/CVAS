@@ -1,5 +1,11 @@
 {
-  "clamp_int": {
+  "bpc_abs": {
+    "reads": [
+      "value"
+    ],
+    "writes": []
+  },
+  "bpc_clamp": {
     "reads": [
       "hi",
       "lo",
@@ -7,74 +13,7 @@
     ],
     "writes": []
   },
-  "abs_int": {
-    "reads": [
-      "x"
-    ],
-    "writes": []
-  },
-  "sum3": {
-    "reads": [
-      "a",
-      "b",
-      "c"
-    ],
-    "writes": []
-  },
-  "avg3_round": {
-    "reads": [
-      "a",
-      "b",
-      "c"
-    ],
-    "writes": []
-  },
-  "directional_energy": {
-    "reads": [
-      "a",
-      "b",
-      "c"
-    ],
-    "writes": []
-  },
-  "weighted_blend": {
-    "reads": [
-      "a",
-      "b",
-      "shift",
-      "wa",
-      "wb"
-    ],
-    "writes": []
-  },
-  "select_directional_predictor": {
-    "reads": [
-      "pred_d0",
-      "pred_d1",
-      "pred_h",
-      "pred_v",
-      "score_d0",
-      "score_d1",
-      "score_h",
-      "score_v"
-    ],
-    "writes": []
-  },
-  "median9": {
-    "reads": [
-      "v0",
-      "v1",
-      "v2",
-      "v3",
-      "v4",
-      "v5",
-      "v6",
-      "v7",
-      "v8"
-    ],
-    "writes": []
-  },
-  "get_pixel": {
+  "bpc_load_pixel": {
     "reads": [
       "height",
       "raw",
@@ -84,75 +23,119 @@
     ],
     "writes": []
   },
-  "is_green": {
+  "bpc_average2": {
     "reads": [
-      "x",
-      "y"
+      "a",
+      "b"
     ],
     "writes": []
   },
-  "is_red": {
+  "bpc_pair_score": {
     "reads": [
-      "x",
-      "y"
+      "a",
+      "b",
+      "center"
     ],
     "writes": []
   },
-  "is_blue": {
+  "bpc_parallel_horizontal_predict": {
     "reads": [
-      "x",
-      "y"
+      "left",
+      "right"
     ],
     "writes": []
   },
-  "edge_aware_predict": {
-    "reads": [
-      "p0",
-      "p1",
-      "p2",
-      "p3",
-      "p4",
-      "p5",
-      "p6",
-      "p7",
-      "p8"
-    ],
-    "writes": []
-  },
-  "ring_activity": {
-    "reads": [
-      "p0",
-      "p1",
-      "p2",
-      "p3",
-      "p4",
-      "p5",
-      "p6",
-      "p7",
-      "p8"
-    ],
-    "writes": []
-  },
-  "adaptive_threshold": {
-    "reads": [
-      "activity",
-      "base_threshold",
-      "center",
-      "edge_pred",
-      "median"
-    ],
-    "writes": []
-  },
-  "refine_candidate": {
+  "bpc_parallel_horizontal_score": {
     "reads": [
       "center",
-      "edge_pred",
-      "median",
+      "left",
+      "right"
+    ],
+    "writes": []
+  },
+  "bpc_parallel_vertical_predict": {
+    "reads": [
+      "down",
+      "up"
+    ],
+    "writes": []
+  },
+  "bpc_parallel_vertical_score": {
+    "reads": [
+      "center",
+      "down",
+      "up"
+    ],
+    "writes": []
+  },
+  "bpc_parallel_diag_predict": {
+    "reads": [
+      "down_right",
+      "up_left"
+    ],
+    "writes": []
+  },
+  "bpc_parallel_diag_score": {
+    "reads": [
+      "center",
+      "down_right",
+      "up_left"
+    ],
+    "writes": []
+  },
+  "bpc_join_parallel_predictions": {
+    "reads": [
+      "d_pred",
+      "d_score",
+      "h_pred",
+      "h_score",
+      "v_pred",
+      "v_score"
+    ],
+    "writes": []
+  },
+  "bpc_parallel_bright_defect": {
+    "reads": [
+      "center",
+      "predicted",
       "threshold"
     ],
     "writes": []
   },
-  "bpc_pixel": {
+  "bpc_parallel_dark_defect": {
+    "reads": [
+      "center",
+      "predicted",
+      "threshold"
+    ],
+    "writes": []
+  },
+  "bpc_parallel_texture_gate": {
+    "reads": [
+      "d_score",
+      "h_score",
+      "threshold",
+      "v_score"
+    ],
+    "writes": []
+  },
+  "bpc_join_defect_flags": {
+    "reads": [
+      "bright_flag",
+      "dark_flag",
+      "texture_gate"
+    ],
+    "writes": []
+  },
+  "bpc_select_output": {
+    "reads": [
+      "center",
+      "defect_flag",
+      "predicted"
+    ],
+    "writes": []
+  },
+  "simple_bpc_pixel": {
     "reads": [
       "height",
       "raw",
@@ -163,7 +146,7 @@
     ],
     "writes": []
   },
-  "bpc_grbg_3x3": {
+  "simple_bpc_frame": {
     "reads": [
       "height",
       "out",
