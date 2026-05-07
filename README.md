@@ -1,10 +1,11 @@
-# CVAS Enhanced v2.0 - Advanced C-model Block Diagram Parser
+# CVAS Enhanced - JSON Schema v3 C-model Block Diagram Parser
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-2.0-green.svg)]()
+[![Schema](https://img.shields.io/badge/schema-3.0-green.svg)]()
+[![Analysis](https://img.shields.io/badge/analysis-2.0-blue.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-ISP 알고리즘 C-model 분석을 위한 고급 파서로, `CVAS_START` / `CVAS_END` 구간을 분석하여 상세한 블록 다이어그램 및 제어 흐름 데이터를 생성합니다.
+ISP 알고리즘 C-model 분석을 위한 고급 파서로, `CVAS_START` / `CVAS_END` 구간을 분석하여 상세한 블록 다이어그램, 제어 흐름 데이터, v3 sequence timeline JSON을 생성합니다. JSON contract version은 `schema_version: "3.0"`이고, 기존 analyzer generation 의미의 `analysis_version: "2.0"` 필드는 유지됩니다.
 
 ## 📚 목차
 
@@ -17,9 +18,24 @@ ISP 알고리즘 C-model 분석을 위한 고급 파서로, `CVAS_START` / `CVAS
 - [라이선스](#-라이선스)
 - [Change log](#-change-log)
 
-## 🎉 v2.0 새로운 기능
+## 🎉 주요 기능
 
-### ✨ Priority 1: 완전한 데이터 흐름 추적
+### 🧭 JSON Schema v3: 실행 timeline contract
+
+- **명시적 contract version**
+  - top-level `schema_version: "3.0"`와 `schema.version: "3.0"` 출력
+  - 기존 `analysis_version: "2.0"`은 analyzer generation metadata로 유지
+- **반복 호출 구분**
+  - 동일 callee를 여러 번 호출해도 `flow.call_instances[]`에 안정적인 `call_id`(`C_B2_0001`, `C_B2_0002` 등) 부여
+- **Signal metadata / provenance**
+  - 기존 endpoint 필드는 유지하면서 `signal_id`, `kind`, `role`, `call_id`, `arg_index`, `param`, `expr`, `target`, `provenance` 추가
+- **Sequence timeline**
+  - `flow.sequence_timeline[]`이 block execution order별 call/signal/read-write summary를 제공
+  - HTML viewer는 v3 timeline card UI를 우선 사용하고, v2 JSON은 legacy sequence fallback으로 렌더링
+- **Function IO embedding**
+  - `--function-io function_io.json`으로 함수별 reads/writes metadata를 `flow.function_io`에 포함 가능
+
+### ✨ v2.0 Priority 1: 완전한 데이터 흐름 추적
 
 - **단순 대입문 처리** (`a = b;`)
   - "copy" 타입 Operation 생성
@@ -93,12 +109,6 @@ python src/cvas_cli.py model.c -o output.json
 `src/cvas_cli.py`가 직접 CLI entrypoint이고, `src/cvas_mvp.py`는 기존 사용자를 위한 호환 wrapper입니다.
 
 ```bash
-python src/cvas_cli.py model.c -o output.json
-```
-
-`src/cvas_cli.py`가 직접 CLI entrypoint이고, `src/cvas_mvp.py`는 기존 사용자를 위한 호환 wrapper입니다.
-
-```bash
 python src/cvas_mvp.py model.c -o output.json
 ```
 
@@ -152,14 +162,23 @@ python cvas_wrapper.py test_examples.c docs/test_examples_output.html --output-j
 
 프로젝트 소개용 정적 개요 문서는 `docs/cvas_project_overview.html`에 있습니다.
 
-### Sequence 탭 (함수/호출 순서 시각화) + `function_io.json`
+### Sequence 탭 (v3 timeline card UI) + `function_io.json`
 
 현재 `output.html`에는 다음이 포함됩니다.
 
 - `Diagram` 탭: operation-flow 중심 block diagram (data-flow / execution-order / call-graph 토글)
-- `Sequence` 탭: 함수 블록 간 연결 + 함수 내부 call sequence 시각화
+- `Sequence` 탭: v3 `flow.sequence_timeline[]`이 있으면 timeline card UI를 우선 렌더링하고, v2 JSON처럼 `sequence_timeline`이 없으면 기존 `flow.call_sequence` 기반 legacy sequence view로 fallback
 
-`Sequence` 탭의 병렬 레인 판단 정확도를 높이려면 `function_io.json`(함수별 reads/writes 메타데이터)을 사용합니다.
+v3 Sequence card는 각 static block-order step에 대해 다음 정보를 그대로 보여줍니다.
+
+- `step_id`, `block_id`, `function`, `order_index`
+- caller/callee로 연결된 `call_id` 목록
+- incoming/outgoing `signal_id` 목록
+- `read_write_summary`의 reads/writes bucket
+
+반복 호출은 같은 callee라도 서로 다른 `call_id`로 표시되므로, `top()`이 `inc()`를 두 번 호출하는 경우에도 `C_B2_0001`, `C_B2_0002`처럼 call occurrence를 구분할 수 있습니다.
+
+`Sequence` 탭의 reads/writes 판단 정확도를 높이려면 `function_io.json`(함수별 reads/writes 메타데이터)을 생성한 뒤 `--function-io`로 JSON에 embed합니다. 파일을 전달하지 않으면 pipeline이 rule-based 기본 `flow.function_io` envelope를 생성합니다.
 
 기본 생성(규칙 기반):
 
@@ -193,7 +212,14 @@ python tools/generate_function_io.py model.c \
   --api-mode responses
 ```
 
-`json_to_html.py`는 생성 시점의 `function_io.json`을 `output.html`에 기본값(`embedded`)으로 포함하며, 런타임에 `./function_io.json`, `../function_io.json`도 자동으로 로드 시도합니다.
+생성한 IO metadata를 분석 JSON에 포함하려면:
+
+```bash
+python src/cvas_cli.py model.c --function-io function_io.json -o output.json
+python cvas_wrapper.py model.c output.html --cvas-args --function-io function_io.json
+```
+
+`json_to_html.py`는 JSON 내부 `flow.function_io`를 먼저 사용하고, 필요하면 생성 시점의 embedded `function_io.json` 또는 런타임 sidecar(`./function_io.json`, `../function_io.json`)도 로드 시도합니다.
 
 ### Cycle Rule 설정
 
@@ -253,8 +279,10 @@ python src/cvas_mvp.py model.c --cycle-config cycle.json -o output.json
 - `cvas_wrapper.py`: 분석부터 HTML 생성까지 실행하는 래퍼 스크립트 (출력 폴더에 ELK 자산 자동 복사)
 - `json_to_html.py`: CVAS JSON을 단일 HTML로 변환 (Diagram/Sequence 탭, IO 상태 표시, 드래그/줌 포함)
 - `tools/generate_function_io.py`: `function_io.json` 생성기 (규칙 기반 + LLM 하이브리드)
-- `function_io.json`: Sequence 탭 의존성/병렬 레인 판단용 함수 IO 메타데이터
+- `function_io.json`: Sequence 탭 reads/writes summary 및 의존성 판단용 함수 IO 메타데이터
 - `docs/cvas_datapath_pipeline_design.md`: datapath 중심 II=1 파이프라인 분석 설계 문서
+- `docs/schema/cvas.schema.v3.json`: Schema v3 formal JSON Schema
+- `docs/schema/cvas-schema-v3.md`: Schema v3 field contract 설명
 - `docs/cvas_project_overview.html`: 프로젝트 소개 / 구조 / 사용 흐름 / 명령어 요약 HTML
 - `docs/test_examples_output.html`: `test_examples.c` 기준 최신 샘플 뷰어 HTML
 - `docs/test_examples_output.json`: 샘플 뷰어 HTML 생성에 사용한 최신 JSON 출력
@@ -335,33 +363,89 @@ int main() {
 
 ## 📊 출력 JSON 구조
 
-### v2.0 확장된 구조
+### Schema v3 additive 구조
+
+v3 출력은 기존 v2 diagram 필드를 제거하지 않고, Sequence tab이 직접 소비할 수 있는 call/signal timeline contract를 추가합니다.
 
 ```json
 {
+  "schema_version": "3.0",
+  "schema": {
+    "name": "cvas-analysis",
+    "version": "3.0",
+    "compatibility": {"preserves_v2_fields": true}
+  },
   "blocks": [...],
   "operations": [...],
-  "signals": [...],
+  "signals": [
+    {
+      "source_id": "B2",
+      "source_type": "block",
+      "destination_id": "B1",
+      "destination_type": "block",
+      "signal_name": "a",
+      "direction": "in",
+      "signal_id": "S_C_B2_0001_ARG_0",
+      "kind": "call_argument",
+      "role": "read",
+      "call_id": "C_B2_0001",
+      "arg_index": 0,
+      "param": "x",
+      "expr": "a",
+      "source_function": "top",
+      "destination_function": "inc",
+      "provenance": {"source": "static", "parser": "ast", "confidence": "high"}
+    }
+  ],
   "flow": {
     "execution_order": [...],
+    "execution_order_meta": {"kind": "static_block_order", "source": "analysis_queue"},
     "parallelism": "sequential",
-    "call_graph": {
-      "nodes": {...},
-      "entry_functions": [...],
-      "call_chains": [...],
-      "critical_path": [...],
-      "max_depth": 3,
-      "has_recursion": false,
-      "analysis_confidence": "high",
-      "analysis_coverage": 1.0,
-      "analysis_limitations": []
-    }
+    "call_sequence": [...],
+    "call_graph": {...},
+    "call_instances": [
+      {
+        "call_id": "C_B2_0001",
+        "caller_block_id": "B2",
+        "caller_function": "top",
+        "callee_block_id": "B1",
+        "callee_function": "inc",
+        "ordinal_in_caller": 1,
+        "args": [{"arg_index": 0, "param": "x", "expr": "a", "signal_id": "S_C_B2_0001_ARG_0"}],
+        "assigned": {"target": "first", "signal_id": "S_C_B2_0001_RET"},
+        "provenance": {"source": "static", "parser": "ast", "confidence": "high"}
+      }
+    ],
+    "sequence_timeline": [
+      {
+        "step_id": "T_0000_B1",
+        "order_index": 0,
+        "block_id": "B1",
+        "function": "inc",
+        "call_ids_as_caller": [],
+        "call_ids_as_callee": ["C_B2_0001"],
+        "incoming_signal_ids": ["S_C_B2_0001_ARG_0"],
+        "outgoing_signal_ids": ["S_C_B2_0001_RET"],
+        "read_write_summary": {
+          "reads_from_other": [...],
+          "read_by_other": [],
+          "writes_to_other": [...],
+          "written_by_other": []
+        }
+      }
+    ],
+    "function_io": {"source": "rule-based", "functions": {...}},
+    "dependencies": {"inter_block": [...], "call_instance": [...]}
   },
   "diagram_hint": {...},
   "note": "Enhanced with P1+P2: complete data flow, CFG, call graph",
-  "analysis_version": "2.0"
+  "analysis_version": "2.0",
+  "analysis_mode": "fast",
+  "analysis_backend": "pycparser"
 }
 ```
+
+Formal contract와 fixture 예시는 `docs/schema/cvas.schema.v3.json`, `docs/schema/cvas-schema-v3.md`, `tests/fixtures/schema/sequence_timeline_v3.expected.json`을 참고하세요.
 
 ### Block 구조 (CFG 추가)
 
@@ -785,14 +869,16 @@ Operations:
 
 ## 🔮 향후 계획 (P3)
 
-### Sequence View 개선 (진행 중)
+### Sequence View 추가 개선
 
-- `function_io.json` 품질 점검 및 프롬프트 튜닝 (규칙 기반 → LLM 보정 → LLM 검증)
+Schema v3 timeline card UI는 구현되어 있으며, 남은 개선은 표시 정책과 IO metadata 품질 쪽입니다.
+
+- `function_io.json` 품질 점검 및 프롬프트 튜닝 (규칙 기반 → LLM/agent 보정 → 검증)
 - `tools/generate_function_io.py` 실행 옵션 보강 (timeout/retry/logging 등)
-- **Sequence 탭에서 현재 생략된 신호(signal)들을 점검하고, 어떤 신호를 추가 표시할지 정책 논의 필요**
-  - 모든 신호를 다 표시하면 복잡도가 급증할 수 있음
-  - 핵심 제어/데이터 의존 신호만 선택 표시하는 기준이 필요
-  - 함수 블록 간 신호와 함수 내부 call-level 신호를 분리해 표시할지 결정 필요
+- timeline card에서 signal 표시량이 많아질 수 있으므로 다음 표시 정책은 계속 조정 필요
+  - 모든 신호를 항상 펼치지 않고 핵심 제어/데이터 의존 신호를 우선 노출
+  - 함수 블록 간 신호와 함수 내부 call-level 신호를 구분해 표시
+  - `signal_id`/`call_id` provenance를 유지하면서 검색/필터 UI 추가 검토
 
 ### Memory Access Pattern Analysis (TODO)
 
@@ -825,11 +911,20 @@ MIT License - 자유롭게 사용, 수정, 배포 가능합니다.
 
 ---
 
-**CVAS Enhanced v2.0** - Made with ❤️ for ISP algorithm optimization
+**CVAS Enhanced / JSON Schema v3** - Made with ❤️ for ISP algorithm optimization
 
 ---
 
 ## 🗒️ Change log
+
+### CVAS JSON Schema v3 Updates
+
+- Added top-level `schema_version: "3.0"` and `schema` metadata while preserving v2 diagram fields.
+- Added `flow.call_instances[]` with stable repeated-call IDs.
+- Added enriched signal metadata (`signal_id`, `kind`, `role`, `call_id`, argument/return fields, provenance).
+- Added `flow.sequence_timeline[]` for viewer-ready Sequence timeline cards.
+- Added `flow.function_io` embedding via `--function-io` and rule-based default normalization.
+- Updated HTML viewer to prefer v3 timeline cards and retain v2 `call_sequence` fallback.
 
 ### CVAS v2.0 Release Notes
 
@@ -1095,221 +1190,64 @@ Building enhanced model with P1+P2 analysis...
 
 ### Backward Compatibility
 
-**✅ 100% backward compatible with v1.0**
+Schema v3 is additive. It preserves the legacy diagram-facing fields while adding richer contract metadata:
 
-- All v1.0 fields present in v2.0
-- All v1.0 CLI options work
-- All v1.0 JSON parsers work
-- All v1.0 cycle configs work
+- `analysis_version: "2.0"` remains the analyzer-generation marker.
+- `schema_version: "3.0"` and `schema.version: "3.0"` identify the JSON contract.
+- Legacy fields such as `blocks`, `operations`, `signals`, `flow.execution_order`, `flow.call_graph`, and `flow.call_sequence` remain present.
+- The HTML viewer prefers `flow.sequence_timeline[]` when present and falls back to the legacy `flow.call_sequence` renderer when timeline data is absent.
 
-**New fields are additive:**
-- `cfg` in blocks (optional)
-- `call_graph` in flow (optional)
-- New operation types in summary
+### Schema v3 Additions
 
-**Migration effort:** Zero for basic usage
-
-### Forward Compatibility
-
-v2.0 JSON can be used by v1.0 tools:
-- Extra fields are ignored
-- Core data structure unchanged
-- Operations list compatible
+- `flow.call_instances[]`: stable repeated-call occurrences with `call_id` values.
+- enriched `signals[]`: optional `signal_id`, `kind`, `role`, `call_id`, parameter/expression, and provenance metadata.
+- `flow.sequence_timeline[]`: one static timeline card per execution-order block.
+- `flow.function_io`: normalized rule-based or imported function IO metadata used by the Sequence view.
+- `flow.dependencies`: compact dependency indexes for block and call-instance consumers.
 
 ---
 
-## 📈 Performance
+## 📈 Performance Notes
 
-### Parsing Speed
-
-- **v1.0:** ~1000 lines/sec
-- **v2.0:** ~900 lines/sec
-- **Difference:** -10%
-
-**Breakdown:**
-- CFG analysis: -5%
-- Call graph: -3%
-- Normalization: -2%
-
-**Acceptable trade-off** for significantly better analysis
-
-### Memory Usage
-
-- **v1.0:** ~10MB per 1000 lines
-- **v2.0:** ~15MB per 1000 lines
-- **Difference:** +50%
-
-**Only noticeable** on very large files (10,000+ lines)
+Current performance depends on input size, analysis mode, and parser backend. The maintained contract is verified by the regression suite and smoke commands rather than fixed README benchmark numbers. Use the checked-in tests and wrapper smoke flow when comparing changes.
 
 ---
 
-## 🎓 Learning & Documentation
+## 🎓 Documentation
 
-### New Documentation
+Maintained references for the current implementation:
 
-- ✅ **README_enhanced.md**: Complete v2.0 guide
-- ✅ **MIGRATION_GUIDE.md**: v1→v2 migration
-- ✅ **P1_IMPROVEMENTS.md**: Implementation details
-- ✅ **ROADMAP.md**: Future development
-
-### Examples
-
-**7 comprehensive examples:**
-1. Simple assignment
-2. Compound operators
-3. Bitwise operations
-4. Control flow
-5. Function calls
-6. Complex expressions
-7. ISP-like algorithms
+- `README.md`: user-facing overview and CLI examples.
+- `docs/cvas_datapath_pipeline_design.md`: live schema v3 datapath and pipeline contract.
+- `docs/schema/cvas.schema.v3.json`: formal JSON Schema v3 document.
+- `docs/schema/cvas-schema-v3.md`: field-level schema v3 notes.
+- `docs/test_examples_output.json` and `docs/test_examples_output.html`: regenerated sample artifacts.
 
 ---
 
-## 🚀 Getting Started with v2.0
+## 📅 Roadmap / Known Limitations
 
-### Quick Start
+Near-term improvements remain focused on quality and hardening rather than changing the public contract:
 
-```bash
-# Install (no dependencies!)
-git clone <repo>
-cd cvas
-
-# Run enhanced parser
-python src/cvas_mvp.py example.c -o output.json
-
-# View results
-cat output.json | jq .
-```
-
-### First Steps
-
-1. **Try with existing code**
-   ```bash
-   python src/cvas_mvp.py your_v1_code.c -o new_output.json
-   ```
-
-2. **Check new features**
-   ```python
-   import json
-   with open("new_output.json") as f:
-       data = json.load(f)
-
-   # Check CFG
-   for block in data["blocks"]:
-       if "cfg" in block:
-           print(f"{block['block_name']}: {len(block['cfg']['loops'])} loops")
-
-   # Check call graph
-   if "call_graph" in data["flow"]:
-       cg = data["flow"]["call_graph"]
-       print(f"Critical path: {cg['critical_path']}")
-   ```
-
-3. **Explore new operation types**
-   ```python
-   ops_summary = {
-       "copy": 0, "shift": 0, "bitwise": 0
-   }
-   for block in data["blocks"]:
-       for op_type in ops_summary:
-           ops_summary[op_type] += block["internal_ops_summary"].get(op_type, 0)
-   print(ops_summary)
-   ```
-
----
-
-## 🙏 Acknowledgments
-
-This release incorporates feedback and suggestions from:
-- ISP algorithm developers
-- Embedded systems engineers
-- Hardware optimization teams
-
-Special thanks to early adopters who tested P1 and P2 features!
-
----
-
-## 📅 Roadmap
-
-### v2.1 (Next Minor Release)
-
-Planned features:
-- Array indexing improvements
-- Better loop iteration estimation
-- Parallel operation detection
-
-### v3.0 (Future Major Release)
-
-Under consideration:
-- Memory access pattern analysis (P3)
-- Type inference system
-- Automatic optimization suggestions
-- Plugin system for custom analysis
-
----
-
-## 🐛 Known Issues
-
-### Minor Limitations
-
-1. **CFG precision**
-   - Current: Simplified basic blocks
-   - Future: More detailed CFG with branch targets
-
-2. **Loop iteration counts**
-   - Current: "unknown" for most loops
-   - Future: Pattern recognition for common loops
-
-3. **Recursion analysis**
-   - Current: Detection only
-   - Future: Cycle estimation for bounded recursion
-
-### Workarounds
-
-All limitations have acceptable workarounds:
-- Manual annotation in comments
-- Conservative cycle estimates
-- Focus on critical path analysis
+- improve `function_io` metadata quality and imported-agent workflows;
+- refine Sequence tab display policy for dense call/signal graphs;
+- improve CFG/loop precision where static analysis can prove more facts;
+- keep full-mode backend hardening compatible with the additive schema v3 contract.
 
 ---
 
 ## 📞 Support
 
-### Resources
-
-- 📖 **Documentation**: README.md
-- 💻 **Examples**: test_examples.c
-
-### Getting Help
-
-- Issues: Create GitHub issue
-- Questions: Check documentation
-- Feature requests: Submit proposal
+- Documentation: `README.md` and `docs/`
+- Examples: `test_examples.c` and `tests/fixtures/`
+- Issues and feature requests: use the repository issue tracker.
 
 ---
 
 ## 📜 License
 
-MIT License - Free to use, modify, and distribute
+MIT License - Free to use, modify, and distribute.
 
 ---
 
-## 🎉 Conclusion
-
-**CVAS v2.0** represents a major step forward in C code analysis for hardware optimization. With complete data flow tracking, control flow graphs, and call graph analysis, you can now:
-
-✅ **Understand** your algorithm's complete execution flow  \
-✅ **Identify** bottlenecks with critical path analysis  \
-✅ **Optimize** based on accurate cycle estimates  \
-✅ **Visualize** complex control structures
-
-All while maintaining **100% backward compatibility** with v1.0!
-
-**Upgrade today and experience the difference!**
-
----
-
-**Version**: 2.0.0  \
-**Release Date**: 2024-02-02  \
-**Download**: `src/cvas_mvp.py`  \
-**Documentation**: `README.md`
+**CVAS Enhanced / JSON Schema v3** emits a backward-compatible C analysis model with explicit schema metadata, stable call-instance IDs, enriched signal provenance, and a Sequence timeline view that can consume embedded `function_io` metadata.
