@@ -192,13 +192,47 @@ def _merge_sequence_labels(labels: list[str]) -> str:
 def build_sequence_execution_model(data: dict) -> dict:
     """Return a viewer-ready v3 Sequence execution board model.
 
-    This is a static dependency layout for the HTML viewer. It uses existing
-    Schema v3 facts and does not claim to be a dynamic runtime/cycle schedule.
+    This is a static viewer model built from existing Schema v3 facts. It
+    exposes two layouts over the same steps/edges:
+    - call: root/caller-left view for human execution-flow intuition.
+    - dependency: producer/consumer static dependency progression.
+
+    Neither layout claims to be a dynamic runtime/cycle schedule.
     """
 
+    order_modes = [
+        {
+            "id": "call",
+            "label": "Call order",
+            "order_kind": "root_call_layout",
+            "description": "Root/caller-left layout: entry callers start on the left and callees expand to the right.",
+        },
+        {
+            "id": "dependency",
+            "label": "Dependency order",
+            "order_kind": "static_dependency_layout",
+            "description": "Static dependency layout: data/dependency producers appear before their consumers when facts allow it.",
+        },
+    ]
     empty_model = {
-        "schema": "sequence-execution-diagram-v1",
-        "order_kind": "static_dependency_layout",
+        "schema": "sequence-execution-diagram-v2",
+        "default_order_mode": "call",
+        "order_kind": "root_call_layout",
+        "order_modes": order_modes,
+        "layouts": {
+            "call": {
+                "order_kind": "root_call_layout",
+                "steps": [],
+                "columns": 0,
+                "lanes": 0,
+            },
+            "dependency": {
+                "order_kind": "static_dependency_layout",
+                "steps": [],
+                "columns": 0,
+                "lanes": 0,
+            },
+        },
         "steps": [],
         "edges": [],
         "columns": 0,
@@ -247,6 +281,8 @@ def build_sequence_execution_model(data: dict) -> dict:
         for step in steps_raw
         if step.get("block_id") is not None
     }
+    step_block_ids = [str(step.get("block_id")) for step in steps_raw if step.get("block_id") is not None]
+    step_block_set = set(step_block_ids)
 
     edge_accumulator: dict[tuple[str, str, str, str], dict] = {}
     raw_scheduling_edges: list[tuple[str, str]] = []
@@ -318,12 +354,46 @@ def build_sequence_execution_model(data: dict) -> dict:
         if visual_kind == "data" and not is_feedback:
             raw_scheduling_edges.append((str(source_id), str(destination_id)))
 
+    def apply_layout(column_by_block: dict[str, int], critical_blocks: set[str]) -> dict:
+        lane_by_column: dict[int, int] = {}
+        rendered_steps: list[dict] = []
+        for step in steps_raw:
+            block_id = str(step.get("block_id"))
+            column = column_by_block.get(block_id, 0)
+            lane = lane_by_column.get(column, 0)
+            lane_by_column[column] = lane + 1
+            block = block_by_id.get(step.get("block_id"), {})
+            rendered_steps.append(
+                {
+                    "step_id": str(step.get("step_id") or f"T_{len(rendered_steps):04d}_{block_id}"),
+                    "block_id": block_id,
+                    "function": str(step.get("function") or block.get("block_name") or block_id),
+                    "order_index": int(step_sort_key(step)[0] if step_sort_key(step)[0] != 10**9 else len(rendered_steps)),
+                    "column": column,
+                    "lane": lane,
+                    "is_critical": block_id in critical_blocks,
+                    "estimated_cycles": block.get("estimated_cycles"),
+                    "call_ids_as_caller": _as_string_list(step.get("call_ids_as_caller")),
+                    "call_ids_as_callee": _as_string_list(step.get("call_ids_as_callee")),
+                    "incoming_signal_ids": _as_string_list(step.get("incoming_signal_ids")),
+                    "outgoing_signal_ids": _as_string_list(step.get("outgoing_signal_ids")),
+                    "read_write_summary": step.get("read_write_summary") if isinstance(step.get("read_write_summary"), dict) else {},
+                }
+            )
+        max_column = max((step["column"] for step in rendered_steps), default=-1)
+        max_lane = max((step["lane"] for step in rendered_steps), default=-1)
+        return {
+            "steps": rendered_steps,
+            "columns": max_column + 1,
+            "lanes": max_lane + 1,
+        }
+
     pred_by_block: dict[str, list[str]] = {str(step.get("block_id")): [] for step in steps_raw}
     for source_id, destination_id in raw_scheduling_edges:
         if source_id not in pred_by_block.get(destination_id, []):
             pred_by_block.setdefault(destination_id, []).append(source_id)
 
-    column_by_block: dict[str, int] = {}
+    dependency_column_by_block: dict[str, int] = {}
     distance_by_block: dict[str, int] = {}
     parent_by_block: dict[str, str | None] = {}
     for step in steps_raw:
@@ -331,48 +401,108 @@ def build_sequence_execution_model(data: dict) -> dict:
         predecessors = pred_by_block.get(block_id, [])
         if predecessors:
             best_parent = max(predecessors, key=lambda item: distance_by_block.get(item, 0))
-            column_by_block[block_id] = max(column_by_block.get(pred, 0) + 1 for pred in predecessors)
+            dependency_column_by_block[block_id] = max(dependency_column_by_block.get(pred, 0) + 1 for pred in predecessors)
             distance_by_block[block_id] = distance_by_block.get(best_parent, 0) + 1
             parent_by_block[block_id] = best_parent
         else:
-            column_by_block[block_id] = 0
+            dependency_column_by_block[block_id] = 0
             distance_by_block[block_id] = 0
             parent_by_block[block_id] = None
 
-    critical_blocks: set[str] = set()
+    dependency_critical_blocks: set[str] = set()
     if distance_by_block:
         end_block = max(distance_by_block, key=lambda item: distance_by_block.get(item, 0))
         if distance_by_block.get(end_block, 0) > 0:
             cursor: str | None = end_block
             while cursor:
-                critical_blocks.add(cursor)
+                dependency_critical_blocks.add(cursor)
                 cursor = parent_by_block.get(cursor)
 
-    lane_by_column: dict[int, int] = {}
-    rendered_steps: list[dict] = []
-    for step in steps_raw:
-        block_id = str(step.get("block_id"))
-        column = column_by_block.get(block_id, 0)
-        lane = lane_by_column.get(column, 0)
-        lane_by_column[column] = lane + 1
-        block = block_by_id.get(step.get("block_id"), {})
-        rendered_steps.append(
-            {
-                "step_id": str(step.get("step_id") or f"T_{len(rendered_steps):04d}_{block_id}"),
-                "block_id": block_id,
-                "function": str(step.get("function") or block.get("block_name") or block_id),
-                "order_index": int(step_sort_key(step)[0] if step_sort_key(step)[0] != 10**9 else len(rendered_steps)),
-                "column": column,
-                "lane": lane,
-                "is_critical": block_id in critical_blocks,
-                "estimated_cycles": block.get("estimated_cycles"),
-                "call_ids_as_caller": _as_string_list(step.get("call_ids_as_caller")),
-                "call_ids_as_callee": _as_string_list(step.get("call_ids_as_callee")),
-                "incoming_signal_ids": _as_string_list(step.get("incoming_signal_ids")),
-                "outgoing_signal_ids": _as_string_list(step.get("outgoing_signal_ids")),
-                "read_write_summary": step.get("read_write_summary") if isinstance(step.get("read_write_summary"), dict) else {},
-            }
-        )
+    call_graph = _as_sequence_dict(flow.get("call_graph"))
+    call_nodes = _as_sequence_dict(call_graph.get("nodes"))
+    call_instances = flow.get("call_instances") if isinstance(flow.get("call_instances"), list) else []
+    call_children: dict[str, list[str]] = {block_id: [] for block_id in step_block_ids}
+    incoming_call_blocks: set[str] = set()
+    for item in call_instances:
+        if not isinstance(item, dict):
+            continue
+        caller = item.get("caller_block_id")
+        callee = item.get("callee_block_id")
+        if caller not in step_by_block_id or callee not in step_by_block_id or caller == callee:
+            continue
+        caller_id = str(caller)
+        callee_id = str(callee)
+        if callee_id not in call_children.setdefault(caller_id, []):
+            call_children[caller_id].append(callee_id)
+        incoming_call_blocks.add(callee_id)
+
+    for node in call_nodes.values():
+        if not isinstance(node, dict):
+            continue
+        caller_block = node.get("block_id")
+        callees = node.get("callees")
+        if caller_block not in step_by_block_id or not isinstance(callees, list):
+            continue
+        caller_id = str(caller_block)
+        for callee_name in callees:
+            callee_node = call_nodes.get(callee_name)
+            if not isinstance(callee_node, dict):
+                continue
+            callee_block = callee_node.get("block_id")
+            if callee_block not in step_by_block_id or callee_block == caller_block:
+                continue
+            callee_id = str(callee_block)
+            if callee_id not in call_children.setdefault(caller_id, []):
+                call_children[caller_id].append(callee_id)
+            incoming_call_blocks.add(callee_id)
+
+    def order_block_ids(ids: list[str]) -> list[str]:
+        return sorted(ids, key=lambda block_id: order_index_by_block.get(block_id, 10**9))
+
+    roots: list[str] = []
+    entry_functions = call_graph.get("entry_functions")
+    if isinstance(entry_functions, list):
+        for function_name in entry_functions:
+            node = call_nodes.get(function_name)
+            if isinstance(node, dict):
+                block_id = node.get("block_id")
+                if block_id in step_by_block_id and str(block_id) not in roots:
+                    roots.append(str(block_id))
+    if not roots and call_children:
+        roots = [block_id for block_id in step_block_ids if block_id not in incoming_call_blocks]
+    if not roots and step_block_ids:
+        roots = [step_block_ids[0]]
+    roots = order_block_ids(roots)
+
+    call_column_by_block: dict[str, int] = {}
+    queue: list[tuple[str, int]] = [(root, 0) for root in roots]
+    while queue:
+        block_id, depth = queue.pop(0)
+        if block_id not in step_block_set:
+            continue
+        existing_depth = call_column_by_block.get(block_id)
+        if existing_depth is not None and existing_depth <= depth:
+            continue
+        call_column_by_block[block_id] = depth
+        for child in order_block_ids(call_children.get(block_id, [])):
+            queue.append((child, depth + 1))
+
+    fallback_column = max(call_column_by_block.values(), default=-1) + 1
+    for block_id in step_block_ids:
+        if block_id not in call_column_by_block:
+            call_column_by_block[block_id] = fallback_column
+
+    call_critical_blocks: set[str] = set()
+    critical_path = call_graph.get("critical_path")
+    if isinstance(critical_path, list):
+        for function_name in critical_path:
+            node = call_nodes.get(function_name)
+            if isinstance(node, dict):
+                block_id = node.get("block_id")
+                if block_id in step_by_block_id:
+                    call_critical_blocks.add(str(block_id))
+    if not call_critical_blocks:
+        call_critical_blocks = dependency_critical_blocks.copy()
 
     edges = []
     for edge in edge_accumulator.values():
@@ -402,18 +532,27 @@ def build_sequence_execution_model(data: dict) -> dict:
     for edge in edges:
         if edge["kind"] != "data":
             continue
-        if edge["source_block_id"] in critical_blocks and edge["destination_block_id"] in critical_blocks:
+        if edge["source_block_id"] in dependency_critical_blocks and edge["destination_block_id"] in dependency_critical_blocks:
             edge["is_critical"] = True
 
-    max_column = max((step["column"] for step in rendered_steps), default=-1)
-    max_lane = max((step["lane"] for step in rendered_steps), default=-1)
+    call_layout = apply_layout(call_column_by_block, call_critical_blocks)
+    call_layout["order_kind"] = "root_call_layout"
+    dependency_layout = apply_layout(dependency_column_by_block, dependency_critical_blocks)
+    dependency_layout["order_kind"] = "static_dependency_layout"
+
     return {
-        "schema": "sequence-execution-diagram-v1",
-        "order_kind": "static_dependency_layout",
-        "steps": rendered_steps,
+        "schema": "sequence-execution-diagram-v2",
+        "default_order_mode": "call",
+        "order_kind": "root_call_layout",
+        "order_modes": order_modes,
+        "layouts": {
+            "call": call_layout,
+            "dependency": dependency_layout,
+        },
+        "steps": call_layout["steps"],
         "edges": edges,
-        "columns": max_column + 1,
-        "lanes": max_lane + 1,
+        "columns": call_layout["columns"],
+        "lanes": call_layout["lanes"],
     }
 
 
@@ -545,14 +684,35 @@ def build_html(data: dict) -> str:
     main {{
       flex: 1;
       display: grid;
-      grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+      grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
       min-height: 0;
     }}
-    main.details-collapsed {{
-      grid-template-columns: minmax(0, 1fr);
+    main.details-expanded {{
+      grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
     }}
-    main.details-collapsed #detail-panel {{
+    main.details-narrow {{
+      grid-template-columns: minmax(0, 1fr) 64px;
+    }}
+    main.details-narrow #detail-panel {{
+      padding: 10px 8px;
+      overflow: hidden;
+    }}
+    main.details-narrow #analysis-card,
+    main.details-narrow #detail-json,
+    main.details-narrow #anomaly-list {{
       display: none;
+    }}
+    main.details-narrow .detail-panel-header {{
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }}
+    main.details-narrow #detail-panel h2,
+    main.details-narrow .detail-panel-toggle {{
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      white-space: nowrap;
+      margin: 0 auto;
     }}
     #diagram-panel {{
       position: relative;
@@ -752,7 +912,8 @@ def build_html(data: dict) -> str:
       gap: 5px;
       font-weight: 600;
     }}
-    .sequence-toolbar button {{
+    .sequence-toolbar button,
+    .sequence-toolbar select {{
       border: 1px solid #93c5fd;
       background: #ffffff;
       color: #1e40af;
@@ -760,6 +921,16 @@ def build_html(data: dict) -> str:
       padding: 4px 8px;
       cursor: pointer;
       font-weight: 600;
+      font-size: 12px;
+    }}
+    .sequence-toolbar .mode-group {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 6px;
+      border: 1px solid #bfdbfe;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.68);
     }}
     .sequence-exec-board {{
       position: relative;
@@ -842,6 +1013,13 @@ def build_html(data: dict) -> str:
       stroke: #f8fafc;
       stroke-width: 3px;
       stroke-linejoin: round;
+      dominant-baseline: middle;
+    }}
+    .sequence-edge-label.source {{
+      fill: #1d4ed8;
+    }}
+    .sequence-edge-label.target {{
+      fill: #0f766e;
     }}
     .sequence-exec-card {{
       position: absolute;
@@ -971,8 +1149,25 @@ def build_html(data: dict) -> str:
       padding: 12px 16px;
       overflow: auto;
     }}
+    .detail-panel-header {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }}
+    .detail-panel-toggle {{
+      border: 1px solid #cbd5e1;
+      border-radius: 7px;
+      background: #f8fafc;
+      color: #334155;
+      padding: 5px 8px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+    }}
     #detail-panel h2 {{
-      margin-top: 0;
+      margin: 0;
       font-size: 16px;
     }}
     #analysis-card {{
@@ -1094,7 +1289,6 @@ def build_html(data: dict) -> str:
     <button id=\"seqLoad\" class=\"tab\">Load Map</button>
     <button id=\"seqExport\" class=\"tab\">Export Map</button>
     <button id=\"ioLoad\" class=\"tab\">Load IO</button>
-    <button id=\"detailToggle\" class=\"tab\">Hide Details</button>
     <span id=\"ioStatus\">IO: none</span>
     <span id=\"analysisSummary\">Analysis: loading</span>
     <input id=\"seqFile\" type=\"file\" accept=\"application/json\" hidden />
@@ -1108,7 +1302,10 @@ def build_html(data: dict) -> str:
       <div id=\"sequence-content\"></div>
     </section>
     <aside id=\"detail-panel\">
-      <h2>Details</h2>
+      <div class=\"detail-panel-header\">
+        <h2>Details</h2>
+        <button id=\"detailToggle\" class=\"detail-panel-toggle\">Narrow Details</button>
+      </div>
       <div id=\"analysis-card\">
         <h3>Analysis Summary</h3>
         <dl id=\"analysis-summary-table\"></dl>
@@ -1127,6 +1324,7 @@ def build_html(data: dict) -> str:
   const DATA = {data_json};
   const SEQUENCE_EXECUTION_MODEL = {sequence_execution_json};
   const DEFAULT_FUNCTION_IO = {function_io_json};
+  const DIAGRAM_PAN_SPEED = 1.6;
 
   const state = {{
     toggles: {{ showDataFlow: true, showExecution: false, showCallGraph: false }},
@@ -1137,11 +1335,14 @@ def build_html(data: dict) -> str:
     anomalies: [],
     activeTab: "diagram",
     sequenceZoom: 1,
+    sequenceOrderMode: "call",
+    sequenceLabelMode: "compact",
     sequenceToggles: {{ showDataFlow: true, showExecution: true, showControl: false, showCritical: true }},
+    sequenceBlockMapsByMode: {{ call: {{}}, dependency: {{}} }},
     sequenceBlockMap: {{}},
     sequenceMap: {{}},
     sequenceGroupMap: {{}},
-    detailsCollapsed: false,
+    detailsMode: "expanded",
     functionIO: {{}},
     functionIOSource: "none"
   }};
@@ -1156,17 +1357,32 @@ def build_html(data: dict) -> str:
     el.textContent = `IO: ${{state.functionIOSource || "none"}}`;
   }}
 
+  function setDetailsMode(state, mode) {{
+    const allowed = ["expanded", "narrow"];
+    state.detailsMode = allowed.includes(mode) ? mode : "expanded";
+    applyDetailsPanelState(state);
+  }}
+
   function applyDetailsPanelState(state) {{
     const main = document.querySelector("main");
     const detailToggle = document.getElementById("detailToggle");
-    if (main) main.classList.toggle("details-collapsed", Boolean(state.detailsCollapsed));
-    if (detailToggle) detailToggle.textContent = state.detailsCollapsed ? "Show Details" : "Hide Details";
+    const mode = state.detailsMode === "narrow" ? "narrow" : "expanded";
+    state.detailsMode = mode;
+    if (main) {{
+      main.classList.remove("details-expanded", "details-narrow");
+      main.classList.add(`details-${{mode}}`);
+    }}
+    if (detailToggle) {{
+      detailToggle.textContent = mode === "expanded" ? "Narrow Details" : "Expand Details";
+      detailToggle.title = "Toggle Details panel: expanded <-> narrow";
+    }}
     requestAnimationFrame(() => redrawActiveSequenceEdges(state));
   }}
 
   function toggleDetailsPanel(state) {{
-    state.detailsCollapsed = !state.detailsCollapsed;
-    applyDetailsPanelState(state);
+    const mode = state.detailsMode === "narrow" ? "narrow" : "expanded";
+    const next = mode === "expanded" ? "narrow" : "expanded";
+    setDetailsMode(state, next);
   }}
 
   function safeValue(value, fallback = "unknown") {{
@@ -1520,13 +1736,125 @@ def build_html(data: dict) -> str:
     }});
   }}
 
-  function serializeSequenceMap(state) {{
+  function getSequenceOrderMode(state, model = SEQUENCE_EXECUTION_MODEL) {{
+    const modes = Array.isArray(model.order_modes) ? model.order_modes.map(mode => mode.id) : ["call", "dependency"];
+    const fallback = model.default_order_mode || "call";
+    return modes.includes(state.sequenceOrderMode) ? state.sequenceOrderMode : fallback;
+  }}
+
+  function getSequenceModeMeta(model, modeId) {{
+    const modes = Array.isArray(model.order_modes) ? model.order_modes : [];
+    return modes.find(mode => mode.id === modeId) || {{ id: modeId, label: modeId, description: "" }};
+  }}
+
+  function getActiveSequenceModel(state, model = SEQUENCE_EXECUTION_MODEL) {{
+    const mode = getSequenceOrderMode(state, model);
+    const layout = model.layouts && model.layouts[mode] ? model.layouts[mode] : model;
+    return Object.assign({{}}, model, layout, {{
+      active_order_mode: mode,
+      order_mode: mode,
+      edges: model.edges || []
+    }});
+  }}
+
+  function getSequenceBlockMapForMode(state, mode = getSequenceOrderMode(state)) {{
+    if (!state.sequenceBlockMapsByMode || typeof state.sequenceBlockMapsByMode !== "object") {{
+      state.sequenceBlockMapsByMode = {{ call: {{}}, dependency: {{}} }};
+    }}
+    if (!state.sequenceBlockMapsByMode[mode] || typeof state.sequenceBlockMapsByMode[mode] !== "object") {{
+      state.sequenceBlockMapsByMode[mode] = {{}};
+    }}
+    state.sequenceBlockMap = state.sequenceBlockMapsByMode[mode];
+    return state.sequenceBlockMapsByMode[mode];
+  }}
+
+  function setSequenceOrderMode(state, mode) {{
+    state.sequenceOrderMode = mode;
+    getSequenceBlockMapForMode(state, getSequenceOrderMode(state));
+    renderSequence(state);
+  }}
+
+  function resetSequenceCardsOnly(state) {{
+    const mode = getSequenceOrderMode(state);
+    if (!state.sequenceBlockMapsByMode || typeof state.sequenceBlockMapsByMode !== "object") state.sequenceBlockMapsByMode = {{}};
+    state.sequenceBlockMapsByMode[mode] = {{}};
+    state.sequenceBlockMap = state.sequenceBlockMapsByMode[mode];
+    state.sequenceMap = {{}};
+    state.sequenceGroupMap = {{}};
+    renderSequence(state);
+  }}
+
+  function resetSequenceCurrentMode(state) {{
+    state.sequenceZoom = 1;
+    resetSequenceCardsOnly(state);
+  }}
+
+  function resetCurrentView(state, svg) {{
+    if (state.activeTab === 'sequence') {{
+      resetSequenceCurrentMode(state);
+      return;
+    }}
+    state.viewTransform = Object.assign({{}}, state.initialTransform);
+    if (state.layout) renderSVG(state.layout, svg);
+  }}
+
+  function getDiagramPanDelta(svgEl, state, previousPoint, nextPoint) {{
+    const rect = svgEl.getBoundingClientRect();
+    const viewBox = svgEl.viewBox && svgEl.viewBox.baseVal ? svgEl.viewBox.baseVal : null;
+    const unitsPerPixelX = viewBox && rect.width ? viewBox.width / rect.width : 1;
+    const unitsPerPixelY = viewBox && rect.height ? viewBox.height / rect.height : 1;
     return {{
-      version: 3,
+      x: (nextPoint.x - previousPoint.x) * unitsPerPixelX * DIAGRAM_PAN_SPEED,
+      y: (nextPoint.y - previousPoint.y) * unitsPerPixelY * DIAGRAM_PAN_SPEED
+    }};
+  }}
+
+  function diagramClientPointToViewport(svgEl, clientPoint) {{
+    const rect = svgEl.getBoundingClientRect();
+    const viewBox = svgEl.viewBox && svgEl.viewBox.baseVal ? svgEl.viewBox.baseVal : null;
+    const unitsPerPixelX = viewBox && rect.width ? viewBox.width / rect.width : 1;
+    const unitsPerPixelY = viewBox && rect.height ? viewBox.height / rect.height : 1;
+    const originX = viewBox ? viewBox.x : 0;
+    const originY = viewBox ? viewBox.y : 0;
+    return {{
+      x: originX + (clientPoint.x - rect.left) * unitsPerPixelX,
+      y: originY + (clientPoint.y - rect.top) * unitsPerPixelY
+    }};
+  }}
+
+  function zoomDiagramAtPointer(svgEl, state, event) {{
+    const point = diagramClientPointToViewport(svgEl, {{ x: event.clientX, y: event.clientY }});
+    const oldZoom = Math.max(0.1, state.viewTransform.k || 1);
+    const zoomFactor = event.deltaY < 0 ? 1.1 : 0.9;
+    const nextZoom = Math.min(3.5, Math.max(0.25, oldZoom * zoomFactor));
+    const diagramPointX = (point.x - state.viewTransform.x) / oldZoom;
+    const diagramPointY = (point.y - state.viewTransform.y) / oldZoom;
+    state.viewTransform.k = nextZoom;
+    state.viewTransform.x = point.x - diagramPointX * nextZoom;
+    state.viewTransform.y = point.y - diagramPointY * nextZoom;
+  }}
+
+  function clonePlainObject(value) {{
+    return value && typeof value === "object" && !Array.isArray(value) ? Object.assign({{}}, value) : {{}};
+  }}
+
+  function serializeSequenceMap(state) {{
+    const mode = getSequenceOrderMode(state);
+    const mapsByMode = state.sequenceBlockMapsByMode && typeof state.sequenceBlockMapsByMode === "object"
+      ? state.sequenceBlockMapsByMode
+      : {{}};
+    const sequenceBlockMapsByMode = {{
+      call: clonePlainObject(mapsByMode.call),
+      dependency: clonePlainObject(mapsByMode.dependency)
+    }};
+    return {{
+      version: 4,
       renderer: "sequence-execution-board",
+      sequence_order_mode: mode,
       nodes: state.sequenceMap || {{}},
       groups: state.sequenceGroupMap || {{}},
-      sequence_block_positions: state.sequenceBlockMap || {{}}
+      sequence_block_positions_by_mode: sequenceBlockMapsByMode,
+      sequence_block_positions: sequenceBlockMapsByMode.dependency || {{}}
     }};
   }}
 
@@ -1534,8 +1862,21 @@ def build_html(data: dict) -> str:
     const payload = data && typeof data === "object" ? data : {{}};
     state.sequenceMap = payload.nodes && typeof payload.nodes === "object" ? payload.nodes : {{}};
     state.sequenceGroupMap = payload.groups && typeof payload.groups === "object" ? payload.groups : {{}};
-    const v3Positions = payload.sequence_block_positions || payload.block_positions || payload.sequenceBlockMap;
-    state.sequenceBlockMap = v3Positions && typeof v3Positions === "object" ? v3Positions : {{}};
+    const mapsByMode = payload.sequence_block_positions_by_mode;
+    if (mapsByMode && typeof mapsByMode === "object") {{
+      state.sequenceBlockMapsByMode = {{
+        call: clonePlainObject(mapsByMode.call),
+        dependency: clonePlainObject(mapsByMode.dependency)
+      }};
+      if (payload.sequence_order_mode) state.sequenceOrderMode = String(payload.sequence_order_mode);
+    }} else {{
+      const legacyPositions = payload.sequence_block_positions || payload.block_positions || payload.sequenceBlockMap;
+      if (!state.sequenceBlockMapsByMode || typeof state.sequenceBlockMapsByMode !== "object") state.sequenceBlockMapsByMode = {{}};
+      if (!state.sequenceBlockMapsByMode.call || typeof state.sequenceBlockMapsByMode.call !== "object") state.sequenceBlockMapsByMode.call = {{}};
+      state.sequenceBlockMapsByMode.dependency = legacyPositions && typeof legacyPositions === "object" ? legacyPositions : {{}};
+      state.sequenceOrderMode = "dependency";
+    }}
+    getSequenceBlockMapForMode(state, getSequenceOrderMode(state));
     renderSequence(state);
   }}
 
@@ -1603,8 +1944,7 @@ def build_html(data: dict) -> str:
     }});
 
     resetBtn.addEventListener("click", () => {{
-      state.viewTransform = Object.assign({{}}, state.initialTransform);
-      if (state.layout) renderSVG(state.layout, svg);
+      resetCurrentView(state, svg);
     }});
 
     function setTab(next) {{
@@ -1696,17 +2036,20 @@ def build_html(data: dict) -> str:
     }});
 
     let isPanning = false;
-    let start = {{ x: 0, y: 0 }};
+    let lastPanPoint = {{ x: 0, y: 0 }};
 
     svg.addEventListener("mousedown", event => {{
       if (event.button !== 0) return;
       isPanning = true;
-      start = {{ x: event.clientX - state.viewTransform.x, y: event.clientY - state.viewTransform.y }};
+      lastPanPoint = {{ x: event.clientX, y: event.clientY }};
     }});
     window.addEventListener("mousemove", event => {{
       if (!isPanning) return;
-      state.viewTransform.x = event.clientX - start.x;
-      state.viewTransform.y = event.clientY - start.y;
+      const nextPanPoint = {{ x: event.clientX, y: event.clientY }};
+      const delta = getDiagramPanDelta(svg, state, lastPanPoint, nextPanPoint);
+      state.viewTransform.x += delta.x;
+      state.viewTransform.y += delta.y;
+      lastPanPoint = nextPanPoint;
       if (state.layout) renderSVG(state.layout, svg);
     }});
     window.addEventListener("mouseup", () => {{
@@ -1715,10 +2058,7 @@ def build_html(data: dict) -> str:
 
     svg.addEventListener("wheel", event => {{
       event.preventDefault();
-      const delta = -event.deltaY;
-      const zoomFactor = delta > 0 ? 1.1 : 0.9;
-      const next = Math.min(3.5, Math.max(0.25, state.viewTransform.k * zoomFactor));
-      state.viewTransform.k = next;
+      zoomDiagramAtPointer(svg, state, event);
       if (state.layout) renderSVG(state.layout, svg);
     }}, {{ passive: false }});
 
@@ -2031,12 +2371,61 @@ def build_html(data: dict) -> str:
     card.appendChild(row);
   }}
 
-  function renderSequenceToolbar(state, shell) {{
+  function renderSequenceOrderModeControls(state, model, toolbar) {{
+    const wrapper = document.createElement("label");
+    wrapper.className = "mode-group";
+    wrapper.title = "Switch Sequence board interpretation: root/caller order or static dependency order";
+    wrapper.appendChild(document.createTextNode("Order"));
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", "Sequence order mode");
+    const modes = Array.isArray(model.order_modes) ? model.order_modes : [];
+    modes.forEach(mode => {{
+      const option = document.createElement("option");
+      option.value = mode.id;
+      option.textContent = mode.label || mode.id;
+      option.title = mode.description || "";
+      select.appendChild(option);
+    }});
+    select.value = getSequenceOrderMode(state, model);
+    select.addEventListener("change", () => setSequenceOrderMode(state, select.value));
+    wrapper.appendChild(select);
+    toolbar.appendChild(wrapper);
+  }}
+
+  function renderSequenceLabelModeControls(state, toolbar) {{
+    const wrapper = document.createElement("label");
+    wrapper.className = "mode-group";
+    wrapper.title = "Edge labels: Compact labels, All labels, or No labels";
+    wrapper.appendChild(document.createTextNode("Edge labels"));
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", "Sequence edge label density");
+    [
+      ["compact", "Compact labels"],
+      ["all", "All labels"],
+      ["off", "No labels"]
+    ].forEach(([value, label]) => {{
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      select.appendChild(option);
+    }});
+    select.value = state.sequenceLabelMode || "compact";
+    select.addEventListener("change", () => {{
+      state.sequenceLabelMode = select.value;
+      redrawActiveSequenceEdges(state);
+    }});
+    wrapper.appendChild(select);
+    toolbar.appendChild(wrapper);
+  }}
+
+  function renderSequenceToolbar(state, shell, model) {{
     const toolbar = document.createElement("div");
     toolbar.className = "sequence-toolbar";
     const title = document.createElement("strong");
     title.textContent = "Sequence execution board";
     toolbar.appendChild(title);
+    renderSequenceOrderModeControls(state, model, toolbar);
+    renderSequenceLabelModeControls(state, toolbar);
 
     function addToggle(label, key) {{
       const wrapper = document.createElement("label");
@@ -2059,11 +2448,8 @@ def build_html(data: dict) -> str:
 
     const reset = document.createElement("button");
     reset.type = "button";
-    reset.textContent = "Reset Sequence Layout";
-    reset.addEventListener("click", () => {{
-      state.sequenceBlockMap = {{}};
-      renderSequence(state);
-    }});
+    reset.textContent = "Reset cards only";
+    reset.addEventListener("click", () => resetSequenceCardsOnly(state));
     toolbar.appendChild(reset);
     shell.appendChild(toolbar);
   }}
@@ -2071,18 +2457,28 @@ def build_html(data: dict) -> str:
   function renderSequenceExecutionDiagramV3(state, model, schemaVersion) {{
     const container = document.getElementById("sequence-content");
     container.innerHTML = "";
+    const activeModel = getActiveSequenceModel(state, model);
+    const orderMode = getSequenceOrderMode(state, model);
+    const modeMeta = getSequenceModeMeta(model, orderMode);
+    const blockMap = getSequenceBlockMapForMode(state, orderMode);
     const shell = document.createElement("div");
     shell.className = "sequence-exec-shell";
     shell.dataset.schemaVersion = schemaVersion;
     shell.dataset.sequenceSchema = model.schema || "sequence-execution-diagram-v1";
+    shell.dataset.sequenceOrderMode = orderMode;
 
     const banner = document.createElement("div");
     banner.className = "timeline-banner";
     const flow = state.data.flow || {{}};
     const metaKind = flow.execution_order_meta && flow.execution_order_meta.kind ? flow.execution_order_meta.kind : "static_block_order";
-    banner.textContent = `Schema ${{schemaVersion}} Sequence: static dependency layout. Left-to-right columns show inferred dependency progression; dashed arrows show ${{metaKind}}, not a runtime trace.`;
+    if (orderMode === "dependency") {{
+      banner.textContent = `Schema ${{schemaVersion}} Sequence · Dependency order: static dependency/data producers flow left-to-right where facts allow; dashed arrows show ${{metaKind}}, not a runtime trace.`;
+    }} else {{
+      banner.textContent = `Schema ${{schemaVersion}} Sequence · Call order: root/caller blocks start on the left and callees/internal operations expand right; data arrows retain true direction and may point backward.`;
+    }}
+    banner.title = modeMeta.description || "";
     shell.appendChild(banner);
-    renderSequenceToolbar(state, shell);
+    renderSequenceToolbar(state, shell, model);
 
     const legend = document.createElement("div");
     legend.className = "sequence-legend";
@@ -2093,19 +2489,19 @@ def build_html(data: dict) -> str:
     board.className = "sequence-exec-board";
     const columnWidth = 260;
     const laneHeight = 150;
-    const width = Math.max(720, (model.columns || 1) * columnWidth + 80);
-    const height = Math.max(320, (model.lanes || 1) * laneHeight + 96);
+    const width = Math.max(720, (activeModel.columns || 1) * columnWidth + 80);
+    const height = Math.max(320, (activeModel.lanes || 1) * laneHeight + 96);
     board.style.width = `${{width}}px`;
     board.style.height = `${{height}}px`;
 
-    for (let column = 0; column < Math.max(1, model.columns || 1); column += 1) {{
+    for (let column = 0; column < Math.max(1, activeModel.columns || 1); column += 1) {{
       const marker = document.createElement("div");
       marker.className = "sequence-timestep";
       marker.style.left = `${{column * columnWidth + 12}}px`;
-      marker.textContent = `T+${{column}}`;
+      marker.textContent = orderMode === "dependency" ? `D+${{column}}` : `Call ${{column}}`;
       board.appendChild(marker);
     }}
-    for (let lane = 0; lane < Math.max(1, model.lanes || 1); lane += 1) {{
+    for (let lane = 0; lane < Math.max(1, activeModel.lanes || 1); lane += 1) {{
       const marker = document.createElement("div");
       marker.className = "sequence-lane";
       marker.style.top = `${{lane * laneHeight + 66}}px`;
@@ -2117,14 +2513,14 @@ def build_html(data: dict) -> str:
     overlay.setAttribute("class", "sequence-edge-overlay");
     board.appendChild(overlay);
 
-    (model.steps || []).forEach(step => {{
+    (activeModel.steps || []).forEach(step => {{
       const card = document.createElement("article");
       card.className = `sequence-exec-card${{step.is_critical ? " critical" : ""}}`;
       card.dataset.stepId = step.step_id || "";
       card.dataset.blockId = step.block_id || "";
       card.dataset.column = String(step.column || 0);
       card.dataset.lane = String(step.lane || 0);
-      const saved = state.sequenceBlockMap[step.step_id] || state.sequenceBlockMap[step.block_id];
+      const saved = blockMap[step.step_id] || blockMap[step.block_id];
       const x = saved && typeof saved.x === "number" ? saved.x : ((step.column || 0) * columnWidth + 24);
       const y = saved && typeof saved.y === "number" ? saved.y : ((step.lane || 0) * laneHeight + 42);
       card.style.left = `${{x}}px`;
@@ -2144,16 +2540,16 @@ def build_html(data: dict) -> str:
       renderSequenceChipRows(card, step);
       card.addEventListener("click", event => {{
         event.stopPropagation();
-        updateSequenceDetails(state, step, model);
+        updateSequenceDetails(state, step, activeModel);
       }});
-      attachSequenceBlockDrag(card, board, model, state);
+      attachSequenceBlockDrag(card, board, activeModel, state);
       board.appendChild(card);
     }});
 
     shell.appendChild(board);
     container.appendChild(shell);
     applySequenceZoom(state);
-    requestAnimationFrame(() => drawSequenceExecutionEdges(board, model, state));
+    requestAnimationFrame(() => drawSequenceExecutionEdges(board, activeModel, state));
   }}
 
   function updateSequenceDetails(state, step, model) {{
@@ -2233,16 +2629,55 @@ def build_html(data: dict) -> str:
         const midX = (x1 + x2) / 2;
         path.setAttribute("d", `M${{x1}},${{y1}} C${{midX}},${{y1}} ${{midX}},${{y2}} ${{x2}},${{y2}}`);
       }}
+      if (edge.label) {{
+        const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+        title.textContent = edge.label;
+        path.appendChild(title);
+      }}
       svg.appendChild(path);
-      if (edge.label && edge.kind !== "exec") {{
-        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        text.setAttribute("class", "sequence-edge-label");
-        text.setAttribute("x", String((x1 + x2) / 2 + 6));
-        text.setAttribute("y", String((y1 + y2) / 2 - 7));
-        text.textContent = edge.label;
-        svg.appendChild(text);
+      const visibleLabel = sequenceEdgeLabelForMode(edge, state);
+      if (visibleLabel && edge.kind !== "exec") {{
+        appendSequenceEndpointLabel(svg, visibleLabel, x1, y1, "source");
+        appendSequenceEndpointLabel(svg, visibleLabel, x2, y2, "target");
       }}
     }});
+  }}
+
+  function compactSequenceEdgeLabel(label) {{
+    const text = String(label || "");
+    if (!text) return "";
+    const parts = text.split(",").map(part => part.trim()).filter(Boolean);
+    const compact = parts.length > 1 ? `${{parts[0]}} +${{parts.length - 1}}` : text;
+    return compact.length > 22 ? `${{compact.slice(0, 19)}}...` : compact;
+  }}
+
+  function sequenceEdgeLabelForMode(edge, state) {{
+    if (!edge || edge.kind === "exec") return "";
+    const mode = state.sequenceLabelMode || "compact";
+    if (mode === "off") return "";
+    if (mode === "all") return edge.label || "";
+    return compactSequenceEdgeLabel(edge.label || "");
+  }}
+
+  function appendSequenceEndpointLabel(svg, label, x, y, side) {{
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    const isSource = side === "source";
+    text.setAttribute("class", isSource ? "sequence-edge-label source" : "sequence-edge-label target");
+    text.setAttribute("x", String(isSource ? x + 8 : x - 8));
+    text.setAttribute("y", String(y - 10));
+    text.setAttribute("text-anchor", isSource ? "start" : "end");
+    text.textContent = label;
+    svg.appendChild(text);
+  }}
+
+  function getSequenceDragDelta(state, startPoint, nextPoint) {{
+    const zoom = Math.max(0.1, state.sequenceZoom || 1);
+    const deltaX = nextPoint.x - startPoint.x;
+    const deltaY = nextPoint.y - startPoint.y;
+    return {{
+      x: deltaX / zoom,
+      y: deltaY / zoom
+    }};
   }}
 
   function attachSequenceBlockDrag(card, board, model, state) {{
@@ -2287,13 +2722,15 @@ def build_html(data: dict) -> str:
       const deltaX = event.clientX - startX;
       const deltaY = event.clientY - startY;
       if (Math.abs(deltaX) + Math.abs(deltaY) > 3) moved = true;
-      const zoom = state.sequenceZoom || 1;
-      const nextX = originX + deltaX / zoom;
-      const nextY = originY + deltaY / zoom;
+      const delta = getSequenceDragDelta(state, {{ x: startX, y: startY }}, {{ x: event.clientX, y: event.clientY }});
+      const nextX = originX + delta.x;
+      const nextY = originY + delta.y;
       card.style.left = `${{nextX}}px`;
       card.style.top = `${{nextY}}px`;
       const key = card.dataset.stepId || card.dataset.blockId;
-      if (key) state.sequenceBlockMap[key] = {{ x: nextX, y: nextY }};
+      const mode = getSequenceOrderMode(state);
+      const blockMap = getSequenceBlockMapForMode(state, mode);
+      if (key) blockMap[key] = {{ x: nextX, y: nextY }};
       drawSequenceExecutionEdges(board, model, state);
     }});
     card.addEventListener("pointerup", finishSequenceDrag);
@@ -2308,7 +2745,7 @@ def build_html(data: dict) -> str:
   function redrawActiveSequenceEdges(state) {{
     const execBoard = document.querySelector("#sequence-content .sequence-exec-board");
     if (execBoard) {{
-      requestAnimationFrame(() => drawSequenceExecutionEdges(execBoard, SEQUENCE_EXECUTION_MODEL, state));
+      requestAnimationFrame(() => drawSequenceExecutionEdges(execBoard, getActiveSequenceModel(state, SEQUENCE_EXECUTION_MODEL), state));
       return;
     }}
     const legacyBoard = document.querySelector("#sequence-content .seq-board");
@@ -2830,11 +3267,9 @@ def build_html(data: dict) -> str:
 
     nodeEl.addEventListener("pointermove", event => {{
       if (!dragging) return;
-      const zoom = state.sequenceZoom || 1;
-      const dx = (event.clientX - startX) / zoom;
-      const dy = (event.clientY - startY) / zoom;
-      const nextX = originX + dx;
-      const nextY = originY + dy;
+      const delta = getSequenceDragDelta(state, {{ x: startX, y: startY }}, {{ x: event.clientX, y: event.clientY }});
+      const nextX = originX + delta.x;
+      const nextY = originY + delta.y;
       nodeEl.style.left = `${{nextX}}px`;
       nodeEl.style.top = `${{nextY}}px`;
 
@@ -2874,9 +3309,9 @@ def build_html(data: dict) -> str:
 
     groupEl.addEventListener("pointermove", event => {{
       if (!dragging) return;
-      const zoom = state.sequenceZoom || 1;
-      const tx = originX + (event.clientX - startX) / zoom;
-      const ty = originY + (event.clientY - startY) / zoom;
+      const delta = getSequenceDragDelta(state, {{ x: startX, y: startY }}, {{ x: event.clientX, y: event.clientY }});
+      const tx = originX + delta.x;
+      const ty = originY + delta.y;
       groupEl.dataset.tx = String(tx);
       groupEl.dataset.ty = String(ty);
       groupEl.style.transform = `translate(${{tx}}px, ${{ty}}px)`;
