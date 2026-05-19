@@ -1,6 +1,11 @@
 # CVAS JSON Schema v3
 
-Schema v3 is an additive contract for CVAS analysis JSON. It keeps the v2 diagram fields (`blocks`, `operations`, `signals`, `flow.execution_order`, `flow.call_sequence`) and adds explicit execution-timeline facts for the HTML Sequence tab.
+Schema v3 is an additive contract for CVAS analysis JSON. It keeps the v2
+diagram fields (`blocks`, `operations`, `signals`, `flow.execution_order`,
+`flow.call_sequence`) and adds explicit execution-timeline facts for the HTML
+Sequence tab. The current viewer can combine these facts with dependency
+indexes to render a static dependency execution board; the JSON contract still
+represents static analysis facts, not a dynamic runtime trace.
 
 ## Version fields
 
@@ -56,7 +61,9 @@ Call argument signals use IDs like `S_C_B2_0001_ARG_0`; call return signals use 
 
 ## `flow.sequence_timeline[]`
 
-The Sequence tab should prefer this viewer-ready model. Each step corresponds to one static block-order entry:
+The Sequence tab should prefer this viewer-ready model as the input to its static
+dependency execution board. Each step corresponds to one static block-order
+entry:
 
 - `step_id`, `order_index`, `block_id`, `function`.
 - `call_ids_as_caller`, `call_ids_as_callee`.
@@ -67,7 +74,10 @@ Signal and call IDs must reference objects present in the same JSON document.
 
 ## Embedded function IO
 
-`flow.function_io` embeds normalized function read/write metadata when available. The viewer uses it to add function-level reads/writes to v3 timeline cards and to guide legacy Sequence layout. The lookup priority is:
+`flow.function_io` embeds normalized function read/write metadata when available.
+The viewer uses it to add function-level read/write chips and Details-panel
+context to the v3 Sequence execution board, and to guide legacy Sequence layout.
+The lookup priority is:
 
 1. embedded `flow.function_io`,
 2. build-time embedded `function_io.json` or a runtime-loaded/auto-loaded sidecar when `flow.function_io` is absent,
