@@ -115,9 +115,13 @@ in JSON.
 Viewer responsibilities:
 
 - Diagram view for block / operation / signal structure.
-- Sequence view that prefers v3 `flow.sequence_timeline[]` timeline cards.
-  Timeline cards use `flow.function_io` (or the viewer's loaded fallback IO map)
-  to display function-level reads/writes alongside call IDs and signal IDs.
+- Sequence view that prefers v3 `flow.sequence_timeline[]` and
+  `flow.dependencies` to render a static dependency execution board.
+  The board uses dependency-derived columns/lanes, semantic arrows, and compact
+  read/write chips. It is a visualization of static facts, not a cycle-accurate
+  runtime or HLS schedule.
+- Dense call IDs, signal IDs, function IO contracts, and provenance details stay
+  in the Details panel rather than dominating the default Sequence board.
 - Legacy Sequence fallback for v2-style JSON that only has `flow.call_sequence`.
 - Visible call ID / signal ID details for provenance inspection.
 - Local/offline operation with bundled assets.
@@ -195,8 +199,8 @@ Rules:
 The HTML renderer consumes the JSON and provides:
 
 - diagram rendering
-- v3 sequence timeline card rendering
-- v2 sequence fallback rendering
+- v3 Sequence execution-board rendering based on a static dependency layout
+- v2 Sequence fallback rendering
 - manual inspection of provenance/confidence IDs
 - offline usage with bundled assets
 
@@ -260,7 +264,7 @@ be visible as an input file, output JSON section, and provenance-bearing data.
 - `flow.sequence_timeline[]`
 - normalized `flow.function_io`
 - `flow.dependencies`
-- viewer-first v3 timeline rendering with v2 fallback
+- viewer-first v3 Sequence execution-board rendering with v2 fallback
 - schema docs, targeted tests, and checked-in sample artifacts
 
 ### Next: Pipeline scheduling
@@ -282,4 +286,4 @@ be visible as an input file, output JSON section, and provenance-bearing data.
 - How strict should the tool be when aliasing is unclear?
 - Should the first release prioritize throughput analysis or control accuracy?
 - What should be the minimum confidence threshold for imported semantic annotations?
-- How much signal detail should the Sequence timeline show by default before filtering/search becomes necessary?
+- How much signal detail should the Sequence execution board show by default before filtering/search becomes necessary?
