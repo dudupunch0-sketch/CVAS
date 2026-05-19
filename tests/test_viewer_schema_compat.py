@@ -149,6 +149,128 @@ def minimal_v3_parallel_model() -> dict:
     }
 
 
+def minimal_v3_call_order_model() -> dict:
+    """Return a fixture where call order and dependency order intentionally differ."""
+
+    signals = [
+        {
+            "signal_id": "S_HELPER_TOP_RET",
+            "source_id": "B_HELPER",
+            "source_type": "block",
+            "destination_id": "B_TOP",
+            "destination_type": "block",
+            "signal_name": "helper_result",
+            "direction": "out",
+            "kind": "call_return",
+            "role": "write",
+            "call_id": "C_TOP_0001",
+        }
+    ]
+    timeline = [
+        {
+            "step_id": "T_0000_B_HELPER",
+            "order_index": 0,
+            "block_id": "B_HELPER",
+            "function": "bpc_inner_op",
+            "call_ids_as_caller": [],
+            "call_ids_as_callee": ["C_TOP_0001"],
+            "incoming_signal_ids": [],
+            "outgoing_signal_ids": ["S_HELPER_TOP_RET"],
+            "read_write_summary": {
+                "reads_from_other": [],
+                "read_by_other": [],
+                "writes_to_other": [{"signal_name": "helper_result"}],
+                "written_by_other": [],
+            },
+        },
+        {
+            "step_id": "T_0001_B_TOP",
+            "order_index": 1,
+            "block_id": "B_TOP",
+            "function": "simple_bpc_frame",
+            "call_ids_as_caller": ["C_TOP_0001"],
+            "call_ids_as_callee": [],
+            "incoming_signal_ids": ["S_HELPER_TOP_RET"],
+            "outgoing_signal_ids": [],
+            "read_write_summary": {
+                "reads_from_other": [{"signal_name": "helper_result"}],
+                "read_by_other": [],
+                "writes_to_other": [],
+                "written_by_other": [],
+            },
+        },
+    ]
+    return {
+        "schema_version": "3.0",
+        "blocks": [
+            {
+                "block_id": "B_TOP",
+                "block_name": "simple_bpc_frame",
+                "inputs": ["frame"],
+                "outputs": ["return"],
+                "estimated_cycles": 3,
+            },
+            {
+                "block_id": "B_HELPER",
+                "block_name": "bpc_inner_op",
+                "inputs": ["frame"],
+                "outputs": ["helper_result"],
+                "estimated_cycles": 1,
+            },
+        ],
+        "operations": [],
+        "signals": signals,
+        "flow": {
+            "execution_order": ["B_HELPER", "B_TOP"],
+            "execution_order_meta": {"kind": "static_block_order"},
+            "parallelism": "sequential",
+            "call_graph": {
+                "nodes": {
+                    "simple_bpc_frame": {
+                        "function_name": "simple_bpc_frame",
+                        "block_id": "B_TOP",
+                        "callers": [],
+                        "callees": ["bpc_inner_op"],
+                    },
+                    "bpc_inner_op": {
+                        "function_name": "bpc_inner_op",
+                        "block_id": "B_HELPER",
+                        "callers": ["simple_bpc_frame"],
+                        "callees": [],
+                    },
+                },
+                "entry_functions": ["simple_bpc_frame"],
+                "critical_path": ["simple_bpc_frame", "bpc_inner_op"],
+            },
+            "call_instances": [
+                {
+                    "call_id": "C_TOP_0001",
+                    "caller_block_id": "B_TOP",
+                    "caller_function": "simple_bpc_frame",
+                    "callee_block_id": "B_HELPER",
+                    "callee_function": "bpc_inner_op",
+                    "ordinal_in_caller": 1,
+                    "args": [],
+                    "assigned": {"target": "helper_result", "signal_id": "S_HELPER_TOP_RET"},
+                }
+            ],
+            "sequence_timeline": timeline,
+            "dependencies": {
+                "inter_block": [
+                    {
+                        "signal_id": item["signal_id"],
+                        "source_id": item["source_id"],
+                        "destination_id": item["destination_id"],
+                        "kind": item["kind"],
+                        "role": item["role"],
+                    }
+                    for item in signals
+                ]
+            },
+        },
+    }
+
+
 def test_viewer_accepts_v2_without_schema_version() -> None:
     html = build_html(minimal_v2_model())
 
@@ -170,15 +292,96 @@ def test_sequence_renderer_selection_prefers_v3_and_falls_back_to_legacy() -> No
     assert select_sequence_renderer(without_timeline) == "legacy"
 
 
+def test_sequence_execution_model_defaults_to_call_order_root_left() -> None:
+    model = build_sequence_execution_model(minimal_v3_call_order_model())
+    call_layout = model["layouts"]["call"]
+    dependency_layout = model["layouts"]["dependency"]
+    call_steps = {step["block_id"]: step for step in call_layout["steps"]}
+    dependency_steps = {step["block_id"]: step for step in dependency_layout["steps"]}
+
+    assert model["schema"] == "sequence-execution-diagram-v2"
+    assert model["default_order_mode"] == "call"
+    assert model["steps"] == call_layout["steps"]
+    assert call_layout["order_kind"] == "root_call_layout"
+    assert dependency_layout["order_kind"] == "static_dependency_layout"
+    assert call_steps["B_TOP"]["column"] < call_steps["B_HELPER"]["column"]
+    assert dependency_steps["B_HELPER"]["column"] < dependency_steps["B_TOP"]["column"]
+
+
 def test_sequence_execution_model_layers_independent_blocks() -> None:
     model = build_sequence_execution_model(minimal_v3_parallel_model())
-    steps = {step["block_id"]: step for step in model["steps"]}
+    dependency_layout = model["layouts"]["dependency"]
+    steps = {step["block_id"]: step for step in dependency_layout["steps"]}
 
     assert steps["B1"]["column"] == steps["B2"]["column"]
     assert steps["B1"]["lane"] != steps["B2"]["lane"]
     assert steps["B3"]["column"] > steps["B1"]["column"]
     assert steps["B4"]["column"] > steps["B3"]["column"]
-    assert any(step["is_critical"] for step in model["steps"])
+    assert any(step["is_critical"] for step in dependency_layout["steps"])
+
+
+def test_sequence_execution_model_exposes_layout_mode_metadata() -> None:
+    model = build_sequence_execution_model(minimal_v3_call_order_model())
+    modes = {mode["id"]: mode for mode in model["order_modes"]}
+
+    assert list(modes) == ["call", "dependency"]
+    assert modes["call"]["label"] == "Call order"
+    assert modes["call"]["order_kind"] == "root_call_layout"
+    assert "root" in modes["call"]["description"].lower()
+    assert modes["dependency"]["label"] == "Dependency order"
+    assert modes["dependency"]["order_kind"] == "static_dependency_layout"
+    assert "dependency" in modes["dependency"]["description"].lower()
+
+
+def test_sequence_execution_model_uses_call_graph_without_call_instances() -> None:
+    data = minimal_v3_call_order_model()
+    data["blocks"].append(
+        {
+            "block_id": "B_LEAF",
+            "block_name": "bpc_leaf_op",
+            "inputs": ["helper_result"],
+            "outputs": ["leaf_result"],
+            "estimated_cycles": 1,
+        }
+    )
+    data["flow"]["sequence_timeline"].insert(
+        0,
+        {
+            "step_id": "T_0000_B_LEAF",
+            "order_index": 0,
+            "block_id": "B_LEAF",
+            "function": "bpc_leaf_op",
+            "call_ids_as_caller": [],
+            "call_ids_as_callee": [],
+            "incoming_signal_ids": [],
+            "outgoing_signal_ids": [],
+            "read_write_summary": {
+                "reads_from_other": [],
+                "read_by_other": [],
+                "writes_to_other": [],
+                "written_by_other": [],
+            },
+        },
+    )
+    data["flow"]["execution_order"] = ["B_LEAF", "B_HELPER", "B_TOP"]
+    data["flow"]["call_instances"] = []
+    nodes = data["flow"]["call_graph"]["nodes"]
+    nodes["bpc_inner_op"]["callees"] = ["bpc_leaf_op"]
+    nodes["bpc_leaf_op"] = {
+        "function_name": "bpc_leaf_op",
+        "block_id": "B_LEAF",
+        "callers": ["bpc_inner_op"],
+        "callees": [],
+    }
+    for step in data["flow"]["sequence_timeline"]:
+        step["call_ids_as_caller"] = []
+        step["call_ids_as_callee"] = []
+
+    model = build_sequence_execution_model(data)
+    call_steps = {step["block_id"]: step for step in model["layouts"]["call"]["steps"]}
+
+    assert call_steps["B_TOP"]["column"] < call_steps["B_HELPER"]["column"]
+    assert call_steps["B_HELPER"]["column"] < call_steps["B_LEAF"]["column"]
 
 
 def test_sequence_execution_model_uses_dependencies_without_duplicate_edges() -> None:
@@ -239,24 +442,118 @@ def test_viewer_prefers_v3_sequence_timeline_when_present() -> None:
     assert "sequence_timeline" in html
 
 
+def test_viewer_sequence_order_toggle_controls_present() -> None:
+    html = build_html(minimal_v3_call_order_model())
+
+    assert "sequenceOrderMode" in html
+    assert "renderSequenceOrderModeControls" in html
+    assert "Call order" in html
+    assert "Dependency order" in html
+    assert "root/caller" in html
+    assert "static dependency" in html
+
+
+def test_viewer_sequence_label_density_controls_present() -> None:
+    html = build_html(minimal_v3_parallel_model())
+
+    assert "sequenceLabelMode" in html
+    assert "renderSequenceLabelModeControls" in html
+    assert "Edge labels" in html
+    assert "Compact labels" in html
+    assert "All labels" in html
+    assert "No labels" in html
+
+
 def test_viewer_sequence_map_controls_support_v3_and_legacy_maps() -> None:
     html = build_html(minimal_v3_parallel_model())
 
     assert "serializeSequenceMap" in html
     assert "loadSequenceMapPayload" in html
     assert "sequence_block_positions" in html
-    assert "sequenceBlockMap" in html
-    assert "Reset Sequence Layout" in html
+    assert "sequence_block_positions_by_mode" in html
+    assert "sequence_order_mode" in html
+    assert "sequenceBlockMapsByMode" in html
+    assert "const legacyPositions" in html
+    assert "state.sequenceBlockMapsByMode.dependency = legacyPositions" in html
+    assert 'state.sequenceOrderMode = "dependency"' in html
+    assert "sequence_block_positions: sequenceBlockMapsByMode.dependency || {}" in html
+    assert "Reset cards only" in html
+    assert "Reset Sequence Layout" not in html
     assert "pointercancel" in html
     assert "finishSequenceDrag" in html
 
 
-def test_viewer_details_panel_can_be_collapsed() -> None:
+def test_viewer_reset_view_is_context_aware_for_sequence_tab() -> None:
+    html = build_html(minimal_v3_parallel_model())
+
+    assert "resetCurrentView" in html
+    assert "resetSequenceCurrentMode" in html
+    assert "activeTab === 'sequence'" in html or 'activeTab === "sequence"' in html
+    assert "state.sequenceMap = {}" in html
+    assert "state.sequenceGroupMap = {}" in html
+
+
+def test_viewer_diagram_pan_compensates_for_viewbox_scale_without_zoom_slowdown() -> None:
+    html = build_html(minimal_v3_parallel_model())
+
+    assert "getDiagramPanDelta" in html
+    assert "DIAGRAM_PAN_SPEED" in html
+    assert "viewBox.width / rect.width" in html
+    assert "viewBox.height / rect.height" in html
+    assert "* unitsPerPixelX * DIAGRAM_PAN_SPEED" in html
+    assert "* unitsPerPixelY * DIAGRAM_PAN_SPEED" in html
+    assert "lastPanPoint" in html
+    assert "unitsPerPixelX / zoom" not in html
+    assert "unitsPerPixelY / zoom" not in html
+
+
+def test_viewer_diagram_wheel_zoom_tracks_mouse_pointer() -> None:
+    html = build_html(minimal_v3_parallel_model())
+
+    assert "diagramClientPointToViewport" in html
+    assert "zoomDiagramAtPointer" in html
+    assert "const diagramPointX = (point.x - state.viewTransform.x) / oldZoom" in html
+    assert "const diagramPointY = (point.y - state.viewTransform.y) / oldZoom" in html
+    assert "state.viewTransform.x = point.x - diagramPointX * nextZoom" in html
+    assert "state.viewTransform.y = point.y - diagramPointY * nextZoom" in html
+    assert "zoomDiagramAtPointer(svg, state, event)" in html
+
+
+def test_viewer_sequence_drag_keeps_original_zoom_normalized_speed() -> None:
+    html = build_html(minimal_v3_parallel_model())
+
+    assert "getSequenceDragDelta" in html
+    assert "SEQUENCE_DRAG_SPEED" not in html
+    assert "Math.max(0.1, state.sequenceZoom || 1)" in html
+    assert "x: deltaX / zoom," in html
+    assert "y: deltaY / zoom" in html
+
+
+def test_viewer_sequence_edge_labels_render_at_endpoints() -> None:
+    html = build_html(minimal_v3_parallel_model())
+
+    assert "appendSequenceEndpointLabel" in html
+    assert "sequence-edge-label source" in html
+    assert "sequence-edge-label target" in html
+    assert "text-anchor" in html
+    assert "String((x1 + x2) / 2 + 6)" not in html
+
+
+def test_viewer_details_panel_toggle_is_adjacent_and_two_state() -> None:
     html = build_html(minimal_v2_model())
 
-    assert "detailToggle" in html
-    assert "details-collapsed" in html
+    assert "detail-panel-header" in html
+    assert "detail-panel-toggle" in html
+    assert '<button id=\"detailToggle\" class=\"detail-panel-toggle\">Narrow Details</button>' in html
+    assert "details-narrow" in html
+    assert "details-expanded" in html
+    assert "details-collapsed" not in html
+    assert "Hide Details" not in html
+    assert "Show Details" not in html
+    assert 'const allowed = ["expanded", "narrow"]' in html
+    assert "expanded <-> narrow" in html
     assert "toggleDetailsPanel" in html
+    assert "setDetailsMode" in html
 
 
 def test_viewer_html_contains_v3_detail_fields() -> None:
