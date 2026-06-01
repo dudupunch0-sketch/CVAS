@@ -746,8 +746,12 @@
         <article class="command-card">
           <h3>3. End-to-End 실행</h3>
           <p>분석부터 HTML viewer 생성, ELK asset 복사까지 한 번에 처리한다.</p>
-          <pre><code>python cvas_wrapper.py test_examples.c docs/test_examples_output.html \
-  --output-json docs/test_examples_output.json</code></pre>
+          <pre><code>python cvas_wrapper.py test_examples.c docs/test_examples_output_fast.html \
+  --output-json docs/test_examples_output_fast.json \
+  --cvas-args --analysis-mode fast
+python cvas_wrapper.py test_examples.c docs/test_examples_output_full.html \
+  --output-json docs/test_examples_output_full.json \
+  --cvas-args --analysis-mode full</code></pre>
         </article>
 
         <article class="command-card">
@@ -823,7 +827,7 @@
         CVAS는 단순한 C 파서가 아니라, <span class="accent-violet">hardware 설계 관점에서 C-model을 재구성하는 분석 파이프라인</span>이다.
         최종 목표는 datapath-centric pipeline architecture를 더 빨리 이해하고, 더 안정적으로 자동화 가능한 형태로 정리하는 것이다.
         최신 소개 문서는 <code>docs/cvas_project_overview.html</code>, 최신 샘플 viewer 산출물은
-        <code>docs/test_examples_output.html</code> / <code>docs/test_examples_output.json</code>에 둔다.
+        <code>docs/test_examples_output_fast.html</code> / <code>docs/test_examples_output_full.html</code>와 대응 JSON에 둔다.
       </div>
     </section>
   </main>

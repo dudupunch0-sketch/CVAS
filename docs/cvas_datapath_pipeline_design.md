@@ -93,7 +93,8 @@ Maintained contract docs and examples:
 - `docs/schema/cvas.schema.v3.json`
 - `docs/schema/cvas-schema-v3.md`
 - `tests/fixtures/schema/sequence_timeline_v3.expected.json`
-- `docs/test_examples_output.json`
+- `docs/test_examples_output_fast.json`
+- `docs/test_examples_output_full.json`
 
 Potential future extensions, not part of the current JSON contract unless added
 explicitly later:
@@ -115,11 +116,11 @@ in JSON.
 Viewer responsibilities:
 
 - Diagram view for block / operation / signal structure.
-- Sequence view that prefers v3 `flow.sequence_timeline[]` and
-  `flow.dependencies` to render a static dependency execution board.
-  The board uses dependency-derived columns/lanes, semantic arrows, and compact
-  read/write chips. It is a visualization of static facts, not a cycle-accurate
-  runtime or HLS schedule.
+- Sequence view that prefers v3 `flow.sequence_timeline[]` and renders one
+  execution board with selectable Call order, Dependency order, and Pipeline
+  stage order layouts. Pipeline stage order groups stage-named functions such as
+  `bpc_stage1_*` into shared stage columns with lane/helper rows. The board is a
+  static analysis visualization, not a promised dynamic runtime or HLS schedule.
 - Dense call IDs, signal IDs, function IO contracts, and provenance details stay
   in the Details panel rather than dominating the default Sequence board.
 - Legacy Sequence fallback for v2-style JSON that only has `flow.call_sequence`.
@@ -199,7 +200,7 @@ Rules:
 The HTML renderer consumes the JSON and provides:
 
 - diagram rendering
-- v3 Sequence execution-board rendering based on a static dependency layout
+- v3 Sequence execution-board rendering with call, dependency, and pipeline-stage layouts
 - v2 Sequence fallback rendering
 - manual inspection of provenance/confidence IDs
 - offline usage with bundled assets

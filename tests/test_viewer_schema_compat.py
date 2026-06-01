@@ -296,6 +296,7 @@ def test_sequence_execution_model_defaults_to_call_order_root_left() -> None:
     model = build_sequence_execution_model(minimal_v3_call_order_model())
     call_layout = model["layouts"]["call"]
     dependency_layout = model["layouts"]["dependency"]
+    pipeline_layout = model["layouts"]["pipeline"]
     call_steps = {step["block_id"]: step for step in call_layout["steps"]}
     dependency_steps = {step["block_id"]: step for step in dependency_layout["steps"]}
 
@@ -304,6 +305,7 @@ def test_sequence_execution_model_defaults_to_call_order_root_left() -> None:
     assert model["steps"] == call_layout["steps"]
     assert call_layout["order_kind"] == "root_call_layout"
     assert dependency_layout["order_kind"] == "static_dependency_layout"
+    assert pipeline_layout["order_kind"] == "pipeline_stage_layout"
     assert call_steps["B_TOP"]["column"] < call_steps["B_HELPER"]["column"]
     assert dependency_steps["B_HELPER"]["column"] < dependency_steps["B_TOP"]["column"]
 
@@ -324,13 +326,16 @@ def test_sequence_execution_model_exposes_layout_mode_metadata() -> None:
     model = build_sequence_execution_model(minimal_v3_call_order_model())
     modes = {mode["id"]: mode for mode in model["order_modes"]}
 
-    assert list(modes) == ["call", "dependency"]
+    assert list(modes) == ["call", "dependency", "pipeline"]
     assert modes["call"]["label"] == "Call order"
     assert modes["call"]["order_kind"] == "root_call_layout"
     assert "root" in modes["call"]["description"].lower()
     assert modes["dependency"]["label"] == "Dependency order"
     assert modes["dependency"]["order_kind"] == "static_dependency_layout"
     assert "dependency" in modes["dependency"]["description"].lower()
+    assert modes["pipeline"]["label"] == "Pipeline stage order"
+    assert modes["pipeline"]["order_kind"] == "pipeline_stage_layout"
+    assert "stage" in modes["pipeline"]["description"].lower()
 
 
 def test_sequence_execution_model_uses_call_graph_without_call_instances() -> None:
@@ -449,8 +454,10 @@ def test_viewer_sequence_order_toggle_controls_present() -> None:
     assert "renderSequenceOrderModeControls" in html
     assert "Call order" in html
     assert "Dependency order" in html
+    assert "Pipeline stage order" in html
     assert "root/caller" in html
     assert "static dependency" in html
+    assert "pipeline stage" in html.lower()
 
 
 def test_viewer_sequence_label_density_controls_present() -> None:

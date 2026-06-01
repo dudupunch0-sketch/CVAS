@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -193,9 +194,11 @@ def build_sequence_execution_model(data: dict) -> dict:
     """Return a viewer-ready v3 Sequence execution board model.
 
     This is a static viewer model built from existing Schema v3 facts. It
-    exposes two layouts over the same steps/edges:
+    exposes three layouts over the same steps/edges:
     - call: root/caller-left view for human execution-flow intuition.
     - dependency: producer/consumer static dependency progression.
+    - pipeline: stage-number columns for C-models that encode pipeline stages
+      in function names such as bpc_stage1_lane().
 
     Neither layout claims to be a dynamic runtime/cycle schedule.
     """
@@ -205,13 +208,19 @@ def build_sequence_execution_model(data: dict) -> dict:
             "id": "call",
             "label": "Call order",
             "order_kind": "root_call_layout",
-            "description": "Root/caller-left layout: entry callers start on the left and callees expand to the right.",
+            "description": "Root/caller-left layout: entry callers start on the left and caller-local callee sequence expands to the right.",
         },
         {
             "id": "dependency",
             "label": "Dependency order",
             "order_kind": "static_dependency_layout",
             "description": "Static dependency layout: data/dependency producers appear before their consumers when facts allow it.",
+        },
+        {
+            "id": "pipeline",
+            "label": "Pipeline stage order",
+            "order_kind": "pipeline_stage_layout",
+            "description": "Pipeline stage layout: stage-named helpers share a stage column and expand into parallel lanes; join/final helpers sit below their stage lanes.",
         },
     ]
     empty_model = {
@@ -231,6 +240,13 @@ def build_sequence_execution_model(data: dict) -> dict:
                 "steps": [],
                 "columns": 0,
                 "lanes": 0,
+            },
+            "pipeline": {
+                "order_kind": "pipeline_stage_layout",
+                "steps": [],
+                "columns": 0,
+                "lanes": 0,
+                "column_labels": [],
             },
         },
         "steps": [],
@@ -420,10 +436,23 @@ def build_sequence_execution_model(data: dict) -> dict:
 
     call_graph = _as_sequence_dict(flow.get("call_graph"))
     call_nodes = _as_sequence_dict(call_graph.get("nodes"))
-    call_instances = flow.get("call_instances") if isinstance(flow.get("call_instances"), list) else []
+    call_instances_raw = flow.get("call_instances")
+    call_instances = call_instances_raw if isinstance(call_instances_raw, list) else []
     call_children: dict[str, list[str]] = {block_id: [] for block_id in step_block_ids}
+    call_child_order: dict[tuple[str, str], tuple[int, int, str]] = {}
     incoming_call_blocks: set[str] = set()
-    for item in call_instances:
+
+    def append_call_child(caller_id: str, callee_id: str, order_key: tuple[int, int, str]) -> None:
+        children = call_children.setdefault(caller_id, [])
+        if callee_id not in children:
+            children.append(callee_id)
+        edge_key = (caller_id, callee_id)
+        previous_order = call_child_order.get(edge_key)
+        if previous_order is None or order_key < previous_order:
+            call_child_order[edge_key] = order_key
+        incoming_call_blocks.add(callee_id)
+
+    for index, item in enumerate(call_instances):
         if not isinstance(item, dict):
             continue
         caller = item.get("caller_block_id")
@@ -432,11 +461,17 @@ def build_sequence_execution_model(data: dict) -> dict:
             continue
         caller_id = str(caller)
         callee_id = str(callee)
-        if callee_id not in call_children.setdefault(caller_id, []):
-            call_children[caller_id].append(callee_id)
-        incoming_call_blocks.add(callee_id)
+        ordinal_raw = item.get("ordinal_in_caller")
+        if ordinal_raw is None:
+            ordinal = index
+        else:
+            try:
+                ordinal = int(ordinal_raw)
+            except (TypeError, ValueError):
+                ordinal = index
+        append_call_child(caller_id, callee_id, (ordinal, index, callee_id))
 
-    for node in call_nodes.values():
+    for fallback_index, node in enumerate(call_nodes.values(), start=len(call_child_order)):
         if not isinstance(node, dict):
             continue
         caller_block = node.get("block_id")
@@ -452,12 +487,25 @@ def build_sequence_execution_model(data: dict) -> dict:
             if callee_block not in step_by_block_id or callee_block == caller_block:
                 continue
             callee_id = str(callee_block)
-            if callee_id not in call_children.setdefault(caller_id, []):
-                call_children[caller_id].append(callee_id)
-            incoming_call_blocks.add(callee_id)
+            if (caller_id, callee_id) in call_child_order:
+                continue
+            append_call_child(
+                caller_id,
+                callee_id,
+                (order_index_by_block.get(callee_block, 10**9), fallback_index, callee_id),
+            )
 
     def order_block_ids(ids: list[str]) -> list[str]:
         return sorted(ids, key=lambda block_id: order_index_by_block.get(block_id, 10**9))
+
+    def order_call_children(caller_id: str) -> list[str]:
+        return sorted(
+            call_children.get(caller_id, []),
+            key=lambda child_id: call_child_order.get(
+                (caller_id, child_id),
+                (order_index_by_block.get(child_id, 10**9), 10**9, child_id),
+            ),
+        )
 
     roots: list[str] = []
     entry_functions = call_graph.get("entry_functions")
@@ -475,17 +523,26 @@ def build_sequence_execution_model(data: dict) -> dict:
     roots = order_block_ids(roots)
 
     call_column_by_block: dict[str, int] = {}
-    queue: list[tuple[str, int]] = [(root, 0) for root in roots]
-    while queue:
-        block_id, depth = queue.pop(0)
+
+    def assign_call_columns(block_id: str, column: int, active: set[str]) -> None:
         if block_id not in step_block_set:
-            continue
-        existing_depth = call_column_by_block.get(block_id)
-        if existing_depth is not None and existing_depth <= depth:
-            continue
-        call_column_by_block[block_id] = depth
-        for child in order_block_ids(call_children.get(block_id, [])):
-            queue.append((child, depth + 1))
+            return
+        existing_column = call_column_by_block.get(block_id)
+        if existing_column is not None and existing_column <= column:
+            return
+        call_column_by_block[block_id] = column
+        if block_id in active:
+            return
+
+        active.add(block_id)
+        for sibling_index, child in enumerate(order_call_children(block_id)):
+            if child in active:
+                continue
+            assign_call_columns(child, column + sibling_index + 1, active)
+        active.remove(block_id)
+
+    for root in roots:
+        assign_call_columns(root, 0, set())
 
     fallback_column = max(call_column_by_block.values(), default=-1) + 1
     for block_id in step_block_ids:
@@ -540,6 +597,58 @@ def build_sequence_execution_model(data: dict) -> dict:
     dependency_layout = apply_layout(dependency_column_by_block, dependency_critical_blocks)
     dependency_layout["order_kind"] = "static_dependency_layout"
 
+    def pipeline_stage_number(function_name: object) -> int | None:
+        match = re.search(r"(?:^|_)stage(\d+)(?:_|$)", str(function_name or "").lower())
+        if not match:
+            return None
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+
+    def pipeline_lane_sort_key(step: dict) -> tuple[int, int, str]:
+        function_name = str(step.get("function") or "").lower()
+        is_join = 1 if "join" in function_name or "final" in function_name else 0
+        return (is_join, step_sort_key(step)[0], function_name)
+
+    stage_numbers = sorted(
+        {
+            stage_number
+            for step in steps_raw
+            for stage_number in [pipeline_stage_number(step.get("function"))]
+            if stage_number is not None
+        }
+    )
+    pipeline_column_by_stage = {stage_number: index + 1 for index, stage_number in enumerate(stage_numbers)}
+    pipeline_column_by_block: dict[str, int] = {}
+    pipeline_lane_by_block: dict[str, int] = {}
+
+    non_stage_steps = [step for step in steps_raw if pipeline_stage_number(step.get("function")) is None]
+    for lane, step in enumerate(non_stage_steps):
+        block_id = str(step.get("block_id"))
+        pipeline_column_by_block[block_id] = 0
+        pipeline_lane_by_block[block_id] = lane
+
+    for stage_number in stage_numbers:
+        stage_steps = [
+            step
+            for step in steps_raw
+            if pipeline_stage_number(step.get("function")) == stage_number
+        ]
+        for lane, step in enumerate(sorted(stage_steps, key=pipeline_lane_sort_key)):
+            block_id = str(step.get("block_id"))
+            pipeline_column_by_block[block_id] = pipeline_column_by_stage[stage_number]
+            pipeline_lane_by_block[block_id] = lane
+
+    pipeline_layout = apply_layout(pipeline_column_by_block, dependency_critical_blocks)
+    for step in pipeline_layout["steps"]:
+        lane = pipeline_lane_by_block.get(step["block_id"])
+        if lane is not None:
+            step["lane"] = lane
+    pipeline_layout["lanes"] = max((step["lane"] for step in pipeline_layout["steps"]), default=-1) + 1
+    pipeline_layout["order_kind"] = "pipeline_stage_layout"
+    pipeline_layout["column_labels"] = ["Entry / utility"] + [f"Stage {stage_number}" for stage_number in stage_numbers]
+
     return {
         "schema": "sequence-execution-diagram-v2",
         "default_order_mode": "call",
@@ -548,6 +657,7 @@ def build_sequence_execution_model(data: dict) -> dict:
         "layouts": {
             "call": call_layout,
             "dependency": dependency_layout,
+            "pipeline": pipeline_layout,
         },
         "steps": call_layout["steps"],
         "edges": edges,
@@ -1736,8 +1846,13 @@ def build_html(data: dict) -> str:
     }});
   }}
 
+  function getSequenceOrderModeIds(model = SEQUENCE_EXECUTION_MODEL) {{
+    const modes = Array.isArray(model.order_modes) ? model.order_modes.map(mode => mode.id).filter(Boolean) : [];
+    return modes.length ? modes : ["call", "dependency", "pipeline"];
+  }}
+
   function getSequenceOrderMode(state, model = SEQUENCE_EXECUTION_MODEL) {{
-    const modes = Array.isArray(model.order_modes) ? model.order_modes.map(mode => mode.id) : ["call", "dependency"];
+    const modes = getSequenceOrderModeIds(model);
     const fallback = model.default_order_mode || "call";
     return modes.includes(state.sequenceOrderMode) ? state.sequenceOrderMode : fallback;
   }}
@@ -1759,7 +1874,7 @@ def build_html(data: dict) -> str:
 
   function getSequenceBlockMapForMode(state, mode = getSequenceOrderMode(state)) {{
     if (!state.sequenceBlockMapsByMode || typeof state.sequenceBlockMapsByMode !== "object") {{
-      state.sequenceBlockMapsByMode = {{ call: {{}}, dependency: {{}} }};
+      state.sequenceBlockMapsByMode = {{}};
     }}
     if (!state.sequenceBlockMapsByMode[mode] || typeof state.sequenceBlockMapsByMode[mode] !== "object") {{
       state.sequenceBlockMapsByMode[mode] = {{}};
@@ -1843,12 +1958,12 @@ def build_html(data: dict) -> str:
     const mapsByMode = state.sequenceBlockMapsByMode && typeof state.sequenceBlockMapsByMode === "object"
       ? state.sequenceBlockMapsByMode
       : {{}};
-    const sequenceBlockMapsByMode = {{
-      call: clonePlainObject(mapsByMode.call),
-      dependency: clonePlainObject(mapsByMode.dependency)
-    }};
+    const sequenceBlockMapsByMode = {{}};
+    getSequenceOrderModeIds().forEach(mode => {{
+      sequenceBlockMapsByMode[mode] = clonePlainObject(mapsByMode[mode]);
+    }});
     return {{
-      version: 4,
+      version: 5,
       renderer: "sequence-execution-board",
       sequence_order_mode: mode,
       nodes: state.sequenceMap || {{}},
@@ -1864,10 +1979,13 @@ def build_html(data: dict) -> str:
     state.sequenceGroupMap = payload.groups && typeof payload.groups === "object" ? payload.groups : {{}};
     const mapsByMode = payload.sequence_block_positions_by_mode;
     if (mapsByMode && typeof mapsByMode === "object") {{
-      state.sequenceBlockMapsByMode = {{
-        call: clonePlainObject(mapsByMode.call),
-        dependency: clonePlainObject(mapsByMode.dependency)
-      }};
+      state.sequenceBlockMapsByMode = {{}};
+      getSequenceOrderModeIds().forEach(mode => {{
+        state.sequenceBlockMapsByMode[mode] = clonePlainObject(mapsByMode[mode]);
+      }});
+      Object.keys(mapsByMode).forEach(mode => {{
+        if (!state.sequenceBlockMapsByMode[mode]) state.sequenceBlockMapsByMode[mode] = clonePlainObject(mapsByMode[mode]);
+      }});
       if (payload.sequence_order_mode) state.sequenceOrderMode = String(payload.sequence_order_mode);
     }} else {{
       const legacyPositions = payload.sequence_block_positions || payload.block_positions || payload.sequenceBlockMap;
@@ -2374,7 +2492,7 @@ def build_html(data: dict) -> str:
   function renderSequenceOrderModeControls(state, model, toolbar) {{
     const wrapper = document.createElement("label");
     wrapper.className = "mode-group";
-    wrapper.title = "Switch Sequence board interpretation: root/caller order or static dependency order";
+    wrapper.title = "Switch Sequence board interpretation: root/caller order, static dependency order, or pipeline stage order";
     wrapper.appendChild(document.createTextNode("Order"));
     const select = document.createElement("select");
     select.setAttribute("aria-label", "Sequence order mode");
@@ -2473,8 +2591,10 @@ def build_html(data: dict) -> str:
     const metaKind = flow.execution_order_meta && flow.execution_order_meta.kind ? flow.execution_order_meta.kind : "static_block_order";
     if (orderMode === "dependency") {{
       banner.textContent = `Schema ${{schemaVersion}} Sequence · Dependency order: static dependency/data producers flow left-to-right where facts allow; dashed arrows show ${{metaKind}}, not a runtime trace.`;
+    }} else if (orderMode === "pipeline") {{
+      banner.textContent = `Schema ${{schemaVersion}} Sequence · Pipeline stage order: stage-named helpers share a stage column and expand into parallel lanes; data arrows retain true direction.`;
     }} else {{
-      banner.textContent = `Schema ${{schemaVersion}} Sequence · Call order: root/caller blocks start on the left and callees/internal operations expand right; data arrows retain true direction and may point backward.`;
+      banner.textContent = `Schema ${{schemaVersion}} Sequence · Call order: root/caller blocks start on the left; caller-local call sequence expands right; data arrows retain true direction and may point backward.`;
     }}
     banner.title = modeMeta.description || "";
     shell.appendChild(banner);
@@ -2498,7 +2618,8 @@ def build_html(data: dict) -> str:
       const marker = document.createElement("div");
       marker.className = "sequence-timestep";
       marker.style.left = `${{column * columnWidth + 12}}px`;
-      marker.textContent = orderMode === "dependency" ? `D+${{column}}` : `Call ${{column}}`;
+      const columnLabels = Array.isArray(activeModel.column_labels) ? activeModel.column_labels : [];
+      marker.textContent = columnLabels[column] || (orderMode === "dependency" ? `D+${{column}}` : (orderMode === "pipeline" ? `Stage ${{column}}` : `Call ${{column}}`));
       board.appendChild(marker);
     }}
     for (let lane = 0; lane < Math.max(1, activeModel.lanes || 1); lane += 1) {{

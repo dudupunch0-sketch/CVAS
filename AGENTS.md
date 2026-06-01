@@ -12,8 +12,10 @@ Core analysis orchestration is in `src/cvas_pipeline.py`, with function-level pa
 Viewer generation is handled by `json_to_html.py`, and end-to-end execution by `cvas_wrapper.py`. Regression tests live in `tests/` with fixtures under `tests/fixtures/`. Viewer assets such as `elk.bundled.js` live in `viewer/assets/`. Project docs and checked-in HTML artifacts live in `docs/`, including:
 
 - `docs/cvas_project_overview.html`
-- `docs/test_examples_output.html`
-- `docs/test_examples_output.json`
+- `docs/test_examples_output_fast.html`
+- `docs/test_examples_output_fast.json`
+- `docs/test_examples_output_full.html`
+- `docs/test_examples_output_full.json`
 
 Helper tooling such as the function IO generator lives in `tools/`.
 
@@ -26,7 +28,8 @@ Run commands from the repository root unless noted otherwise.
 - `python src/cvas_cli.py model.c --analysis-mode fast -o output.json`: explicitly use the default `pycparser` analysis backend
 - `python src/cvas_cli.py model.c --analysis-mode full --compile-arg=-Iinclude -o output.json`: use optional tree-sitter structure parsing, fast fallback, and non-fatal GCC dump metadata with extra compatible compile flags when needed
 - `python json_to_html.py output.json output.html`: convert JSON to a standalone HTML viewer
-- `python cvas_wrapper.py test_examples.c docs/test_examples_output.html --output-json docs/test_examples_output.json`: refresh the checked-in sample HTML/JSON artifacts
+- `python cvas_wrapper.py test_examples.c docs/test_examples_output_fast.html --output-json docs/test_examples_output_fast.json --cvas-args --analysis-mode fast`: refresh the checked-in fast sample HTML/JSON artifacts
+- `python cvas_wrapper.py test_examples.c docs/test_examples_output_full.html --output-json docs/test_examples_output_full.json --cvas-args --analysis-mode full`: refresh the checked-in full sample HTML/JSON artifacts
 - `python -m py_compile src/cvas_mvp.py src/cvas_cli.py src/cvas_pipeline.py src/cvas_passes.py src/cvas_callgraph.py src/cvas_source.py src/cvas_analysis.py src/cvas_gcc_dump.py src/cvas_treesitter.py src/c_ast_utils.py json_to_html.py tools/generate_function_io.py tools/function_io_contract.py`: quick syntax check
 - `../.venv/bin/python -m pytest -q`: run regression tests from `CVAS/` using the workspace-local virtualenv at `/home/dudupunch0/company/cvas/.venv`; from `.worktrees/<name>/`, use `../../../.venv/bin/python -m pytest -q`
 - `python tools/generate_function_io.py test_examples.c --llm-provider none`: generate the rule-based `function_io.json`
@@ -40,7 +43,7 @@ Use 4-space indentation and descriptive snake_case names. Keep new code ASCII un
 
 ## Testing Guidelines
 
-Tests use `pytest` and snapshot-style fixture comparisons in `tests/test_regression.py`. Prefer the workspace-local virtualenv at `/home/dudupunch0/company/cvas/.venv` when running from `CVAS/`, which means using `../.venv/bin/python`, so the dependency is present even if the base shell image lacks `pytest`. Keep fixture pairs aligned (`*.c` + `*.expected.json`). When viewer behavior changes, refresh the checked-in sample output in `docs/` and manually verify the Diagram and Sequence tabs.
+Tests use `pytest` and snapshot-style fixture comparisons in `tests/test_regression.py`. Prefer the workspace-local virtualenv at `/home/dudupunch0/company/cvas/.venv` when running from `CVAS/`, which means using `../.venv/bin/python`, so the dependency is present even if the base shell image lacks `pytest`. Keep fixture pairs aligned (`*.c` + `*.expected.json`). When viewer behavior changes, refresh the checked-in fast/full sample outputs in `docs/` and manually verify the Diagram and Sequence tabs.
 
 ## Commit & Pull Request Guidelines
 
@@ -48,4 +51,4 @@ Use concise imperative commit messages. When behavior changes, include the valid
 
 ## Agent Notes
 
-Prefer `src/cvas_cli.py` when testing the direct CLI path and keep `src/cvas_mvp.py` as a compatibility layer. Use `--analysis-mode fast` for baseline regressions and `--analysis-mode full` when optional tree-sitter structure parsing plus GCC dump metadata should be exercised without requiring clang/libclang. Treat the Diagram tab as the primary operation-flow block diagram, and use CFG / Sequence / call graph views as supporting perspectives.
+Prefer `src/cvas_cli.py` when testing the direct CLI path and keep `src/cvas_mvp.py` as a compatibility layer. Use `--analysis-mode fast` for baseline regressions and `--analysis-mode full` when optional tree-sitter structure parsing plus GCC dump metadata should be exercised without requiring clang/libclang. Treat the Diagram tab as the primary operation-flow block diagram, and use CFG / Sequence / call graph views as supporting perspectives. Sequence v3 exposes Call order, Dependency order, and Pipeline stage order; the pipeline mode groups stage-named helpers such as `bpc_stage1_*` into shared stage columns with parallel lanes.

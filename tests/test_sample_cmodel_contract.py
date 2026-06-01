@@ -1,0 +1,270 @@
+"""Contract tests for the checked-in CVAS sample cmodel and syntax fixtures."""
+
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from json_to_html import build_sequence_execution_model  # noqa: E402
+
+CVAS_PARSER = ROOT_DIR / "src" / "cvas_mvp.py"
+SAMPLE_C = ROOT_DIR / "test_examples.c"
+CPP_FIXTURE = ROOT_DIR / "tests" / "fixtures" / "syntax" / "cpp_syntax_coverage.cpp"
+
+
+def _run_cvas(input_path: Path, *extra_args: str) -> dict:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_path = Path(tmpdir) / "model.json"
+        cmd = [sys.executable, str(CVAS_PARSER), str(input_path), "-o", str(output_path)]
+        cmd.extend(extra_args)
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        assert result.returncode == 0, (
+            "CVAS parser failed\n"
+            f"cmd: {' '.join(cmd)}\n"
+            f"stdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        )
+        return json.loads(output_path.read_text(encoding="utf-8"))
+
+
+def _function_names(model: dict) -> set[str]:
+    return {block.get("block_name", "") for block in model.get("blocks", [])}
+
+
+def _call_graph_node(model: dict, name: str) -> dict:
+    nodes = model.get("flow", {}).get("call_graph", {}).get("nodes", {})
+    assert name in nodes, f"missing call graph node: {name}"
+    return nodes[name]
+
+
+def _direct_callees(model: dict, name: str) -> set[str]:
+    node = _call_graph_node(model, name)
+    return set(node.get("callees", []))
+
+
+def _stage_functions(source: str, stage_number: int) -> list[str]:
+    pattern = re.compile(r"\bstatic\s+[^;{()]+\s+(bpc_stage%d_[A-Za-z0-9_]+)\s*\(" % stage_number)
+    return sorted(set(pattern.findall(source)))
+
+
+def test_sample_cmodel_has_six_stage_pipeline_contract():
+    source = SAMPLE_C.read_text(encoding="utf-8")
+
+    assert "void simple_bpc_frame" in source
+    assert "static int simple_bpc_pixel" in source
+
+    for stage_number in range(1, 7):
+        functions = _stage_functions(source, stage_number)
+        assert len(functions) >= 4, f"stage {stage_number} has too few helper functions: {functions}"
+        assert any("join" in name or "final" in name for name in functions), (
+            f"stage {stage_number} needs a join/finalize helper: {functions}"
+        )
+        lane_functions = [name for name in functions if "join" not in name and "final" not in name]
+        assert len(lane_functions) >= 3, (
+            f"stage {stage_number} needs at least 3 parallel lane/helper functions: {functions}"
+        )
+
+
+def test_sample_cmodel_sequence_depth_and_parallel_lanes():
+    model = _run_cvas(SAMPLE_C)
+    names = _function_names(model)
+
+    assert "simple_bpc_frame" in names
+    assert "simple_bpc_pixel" in names
+    assert "simple_bpc_pixel" in _direct_callees(model, "simple_bpc_frame")
+
+    pixel_callees = _direct_callees(model, "simple_bpc_pixel")
+    for stage_number in range(1, 7):
+        stage_callees = {name for name in pixel_callees if name.startswith(f"bpc_stage{stage_number}_")}
+        assert len(stage_callees) >= 4, (
+            f"simple_bpc_pixel should call at least 4 stage {stage_number} helpers, got {stage_callees}"
+        )
+        assert any("join" in name or "final" in name for name in stage_callees)
+
+    timeline = model.get("flow", {}).get("sequence_timeline", [])
+    timeline_text = json.dumps(timeline)
+    for stage_number in range(1, 7):
+        assert f"bpc_stage{stage_number}_" in timeline_text
+    assert len(timeline) >= 30
+
+
+def test_sample_cmodel_call_order_layout_separates_pipeline_stages():
+    model = _run_cvas(SAMPLE_C)
+    sequence_model = build_sequence_execution_model(model)
+    call_steps = sequence_model["layouts"]["call"]["steps"]
+
+    stage_column_ranges: list[tuple[int, int]] = []
+    for stage_number in range(1, 7):
+        columns = [
+            step["column"]
+            for step in call_steps
+            if step["function"].startswith(f"bpc_stage{stage_number}_")
+        ]
+        assert columns, f"stage {stage_number} has no sequence cards"
+        stage_column_ranges.append((min(columns), max(columns)))
+
+    for previous_stage, next_stage in zip(stage_column_ranges, stage_column_ranges[1:]):
+        assert previous_stage[1] < next_stage[0], (
+            "pipeline stages should progress left-to-right in Call order; "
+            f"got adjacent ranges {previous_stage} and {next_stage}"
+        )
+
+
+def test_sample_cmodel_pipeline_stage_layout_groups_stage_lanes_in_parallel():
+    model = _run_cvas(SAMPLE_C)
+    sequence_model = build_sequence_execution_model(model)
+    pipeline_layout = sequence_model["layouts"]["pipeline"]
+    pipeline_steps = pipeline_layout["steps"]
+
+    assert pipeline_layout["order_kind"] == "pipeline_stage_layout"
+    assert pipeline_layout["column_labels"][:7] == [
+        "Entry / utility",
+        "Stage 1",
+        "Stage 2",
+        "Stage 3",
+        "Stage 4",
+        "Stage 5",
+        "Stage 6",
+    ]
+    assert pipeline_layout["lanes"] >= 5
+
+    stage_columns: list[int] = []
+    for stage_number in range(1, 7):
+        stage_steps = [
+            step
+            for step in pipeline_steps
+            if step["function"].startswith(f"bpc_stage{stage_number}_")
+        ]
+        assert len(stage_steps) >= 5, f"stage {stage_number} should expose lane/helper cards"
+
+        columns = {step["column"] for step in stage_steps}
+        lanes = {step["lane"] for step in stage_steps}
+        assert len(columns) == 1, f"stage {stage_number} helpers should share one stage column"
+        assert len(lanes) == len(stage_steps), f"stage {stage_number} helpers should occupy parallel lanes"
+
+        join_step = next(step for step in stage_steps if "join" in step["function"] or "final" in step["function"])
+        assert join_step["lane"] == max(lanes), "join/final helper should sit below the parallel lanes"
+        stage_columns.append(next(iter(columns)))
+
+    assert stage_columns == sorted(stage_columns)
+
+
+def test_sample_cmodel_c_syntax_markers_are_present():
+    source = SAMPLE_C.read_text(encoding="utf-8")
+
+    required_substrings = [
+        "typedef unsigned short",
+        "typedef struct",
+        "struct bpc_debug_record",
+        "enum bpc_pixel_state",
+        "enum {",
+        "(*window)",
+        "[BPC_KERNEL_SIZE]",
+        "[BPC_KERNEL_SIZE][BPC_KERNEL_SIZE]",
+        "&=",
+        "|=",
+        "^",
+        "~",
+        "<<",
+        ">>",
+        "sizeof(",
+        "(bpc_sample_t)",
+        "NULL",
+        "else if",
+        "switch",
+        "do {",
+        "continue;",
+        "return;",
+        "printf(",
+        "fprintf(",
+        "sprintf(",
+        "fopen(",
+        "fclose(",
+    ]
+    for marker in required_substrings:
+        assert marker in source, f"missing C syntax marker: {marker}"
+
+    assert re.search(r"\?.*\?.*:.*:", source, re.DOTALL), "missing nested ternary expression"
+    assert re.search(r"\bfor\s*\(", source), "missing for loop"
+    assert re.search(r"\bwhile\s*\(", source), "missing while loop"
+    assert "++" in source, "missing increment syntax"
+    assert "--" in source, "missing decrement syntax"
+
+
+def test_cpp_syntax_fixture_contains_target_cpp_patterns():
+    source = CPP_FIXTURE.read_text(encoding="utf-8")
+
+    required_substrings = [
+        "template<class T>",
+        "class DerivedProcessor : public BaseProcessor",
+        "private:",
+        "public:",
+        "struct ScratchSlot",
+        "~BaseProcessor()",
+        "virtual ~BaseProcessor()",
+        "virtual int process",
+        "virtual const char *label() const {",
+        "static int scale_value",
+        "static int call_count",
+        "static const int kMaxSamples",
+        "static const bool kEnabled",
+        "int &mutable_ref",
+        "const int &readonly_ref",
+        "const std::string&",
+        "const char *",
+        "new int[",
+        "delete[]",
+        "new int**[",
+        "int (*row)[4]",
+        "int (*grid)[3][4]",
+    ]
+    for marker in required_substrings:
+        assert marker in source, f"missing C++ syntax marker: {marker}"
+
+    forbidden_substrings = [
+        "ac_int",
+        "ac_uint",
+        "ac_fixed",
+        "sc_int",
+        "sc_uint",
+        "sc_bigint",
+        "sc_bv",
+        "sc_lv",
+        "#pragma HLS",
+        ".range(",
+    ]
+    for marker in forbidden_substrings:
+        assert marker not in source, f"HLS/SystemC marker should be absent: {marker}"
+
+
+def test_cpp_syntax_fixture_compiles_syntax_only():
+    result = subprocess.run(
+        [
+            "g++",
+            "-std=c++11",
+            "-DCVAS_START=",
+            "-DCVAS_END=",
+            "-fsyntax-only",
+            str(CPP_FIXTURE),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_cpp_syntax_fixture_cvas_full_mode_non_crash():
+    model = _run_cvas(CPP_FIXTURE, "--analysis-mode", "full", "--language", "c++")
+
+    assert model["analysis_mode"] == "full"
+    assert model["analysis_backend"] == "tree-sitter+pycparser+gcc-dump"
+    assert model.get("blocks"), "C++ syntax fixture should discover at least one block"

@@ -150,10 +150,15 @@ python cvas_wrapper.py model.c output.html
 
 `cvas_wrapper.py`는 `output.html` 생성 후 필요한 ELK 자산을 같은 출력 폴더 기준 `./assets/elk.bundled.js`로 자동 복사합니다.
 
-문서/데모 용 최신 샘플 출력은 다음처럼 갱신할 수 있습니다.
+문서/데모 용 최신 샘플 출력은 fast/full 두 mode를 명시해서 갱신합니다.
 
 ```bash
-python cvas_wrapper.py test_examples.c docs/test_examples_output.html --output-json docs/test_examples_output.json
+python cvas_wrapper.py test_examples.c docs/test_examples_output_fast.html \
+  --output-json docs/test_examples_output_fast.json \
+  --cvas-args --analysis-mode fast
+python cvas_wrapper.py test_examples.c docs/test_examples_output_full.html \
+  --output-json docs/test_examples_output_full.json \
+  --cvas-args --analysis-mode full
 ```
 
 프로젝트 소개용 정적 개요 문서는 `docs/cvas_project_overview.html`에 있습니다.
@@ -164,6 +169,7 @@ python cvas_wrapper.py test_examples.c docs/test_examples_output.html --output-j
 
 - `Diagram` 탭: operation-flow 중심 block diagram (data-flow / execution-order / call-graph 토글)
 - `Sequence` 탭: v3 `flow.sequence_timeline[]`이 있으면 timeline card UI를 우선 렌더링하고, v2 JSON처럼 `sequence_timeline`이 없으면 기존 `flow.call_sequence` 기반 legacy sequence view로 fallback
+- `Sequence` 탭의 Order selector는 `Call order`, `Dependency order`, `Pipeline stage order`를 제공합니다. Pipeline stage order는 `bpc_stage1_*`처럼 stage 번호가 들어간 함수들을 같은 stage column에 묶고 lane/helper들을 병렬 row로 펼칩니다.
 
 v3 Sequence card는 각 static block-order step에 대해 다음 정보를 보여줍니다.
 
@@ -311,8 +317,8 @@ python src/cvas_mvp.py model.c --cycle-config cycle.json -o output.json
 - `docs/schema/cvas.schema.v3.json`: Schema v3 formal JSON Schema
 - `docs/schema/cvas-schema-v3.md`: Schema v3 field contract 설명
 - `docs/cvas_project_overview.html`: 프로젝트 소개 / 구조 / 사용 흐름 / 명령어 요약 HTML
-- `docs/test_examples_output.html`: `test_examples.c` 기준 최신 샘플 뷰어 HTML
-- `docs/test_examples_output.json`: 샘플 뷰어 HTML 생성에 사용한 최신 JSON 출력
+- `docs/test_examples_output_fast.html` / `.json`: `test_examples.c` 기준 fast-mode 샘플 뷰어/JSON
+- `docs/test_examples_output_full.html` / `.json`: `test_examples.c` 기준 full-mode 샘플 뷰어/JSON
 - `viewer/`: 오프라인 HTML 뷰어 및 ELK.js 번들 자산
 - `fixtures/`: 파싱 회귀 테스트용 C 코드 모음
 
@@ -961,7 +967,7 @@ MIT License - 자유롭게 사용, 수정, 배포 가능합니다.
 - Added enriched signal metadata (`signal_id`, `kind`, `role`, `call_id`, argument/return fields, provenance).
 - Added `flow.sequence_timeline[]` for viewer-ready Sequence timeline cards.
 - Added `flow.function_io` embedding via `--function-io` and rule-based default normalization.
-- Updated HTML viewer to prefer v3 timeline cards and retain v2 `call_sequence` fallback.
+- Updated HTML viewer to prefer v3 timeline cards, expose Call/Dependency/Pipeline order modes, and retain v2 `call_sequence` fallback.
 
 ### CVAS v2.0 Release Notes
 
@@ -1261,7 +1267,7 @@ Current performance depends on input size, analysis mode, and parser backend. Th
 - ✅ **docs/cvas_datapath_pipeline_design.md**: live schema v3 datapath and pipeline contract
 - ✅ **docs/schema/cvas.schema.v3.json**: formal JSON Schema v3 document
 - ✅ **docs/schema/cvas-schema-v3.md**: field-level schema v3 notes
-- ✅ **docs/test_examples_output.json** and **docs/test_examples_output.html**: regenerated sample artifacts
+- ✅ **docs/test_examples_output_fast.json/html** and **docs/test_examples_output_full.json/html**: regenerated fast/full sample artifacts
 
 ### Examples
 
