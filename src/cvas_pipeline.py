@@ -32,7 +32,7 @@ from cvas_model import (
 from cvas_passes import FunctionAnalysisResult, analyze_function, expand_simple_function_macros
 from cvas_serialize import serialize_block, serialize_flow, serialize_signal
 from cvas_source import extract_cvas_region, find_cvas_region_bounds, find_function_definitions
-from cvas_text import parse_params, split_top_level_commas
+from cvas_text import param_name_from_spec, parse_params, split_top_level_commas
 
 # ============================================================================
 # Constants
@@ -114,13 +114,7 @@ def _parse_param_specs(params: str) -> List[str]:
 
 
 def _param_name_from_spec(spec: str) -> Optional[str]:
-    compact = " ".join(spec.strip().split())
-    if not compact:
-        return None
-    match = re.search(r"([A-Za-z_]\w*)\s*(?:\[[^\]]*\])?$", compact)
-    if match:
-        return match.group(1)
-    return None
+    return param_name_from_spec(spec)
 
 
 def _build_rule_function_io(
@@ -665,12 +659,14 @@ def build_model(
             continue
         visited.add(current)
         analyzed_names.append(current)
-        _, _, _, body, _ = func
+        _, caller_name, params, body, _ = func
         calls, _ = find_function_calls(
             body,
             known_functions,
             analysis_options=analysis_options,
             source_path=Path(func[4]),
+            caller_name=caller_name,
+            params=params,
         )
         for callee_name, _, _ in calls:
             if callee_name not in visited:

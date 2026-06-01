@@ -61,7 +61,7 @@ A new fixture, `tests/fixtures/syntax/cpp_syntax_coverage.cpp`, covers C++ const
 - `new[]` / `delete[]`
 - pointer-to-array and pointer-to-multidimensional-array parameters
 
-The fixture intentionally avoids HLS/SystemC markers such as `ac_int`, `sc_uint`, `#pragma HLS`, and `.range(`. The current target is syntax discovery/non-crash coverage, not HLS semantic modeling.
+The fixture intentionally avoids HLS/SystemC markers such as `ac_int`, `sc_uint`, `#pragma HLS`, and `.range(`. The maintained target is ordinary C++ cmodel coverage: CVAS should discover qualified class/member blocks, normalize C++ reference and pointer-to-array parameters into readable inputs, connect direct/template/member calls into the call graph and Sequence view, and keep HLS/SystemC semantic modeling out of scope.
 
 ### 3. Add a Pipeline stage order to the Sequence board
 

@@ -282,3 +282,69 @@ def test_cpp_syntax_fixture_cvas_full_mode_non_crash():
     assert model["analysis_mode"] == "full"
     assert model["analysis_backend"] == "tree-sitter+pycparser+gcc-dump"
     assert model.get("blocks"), "C++ syntax fixture should discover at least one block"
+
+
+def test_cpp_syntax_fixture_cvas_full_mode_models_cpp_cmodel():
+    model = _run_cvas(CPP_FIXTURE, "--analysis-mode", "full", "--language", "c++")
+    names = _function_names(model)
+
+    required_blocks = {
+        "clamp_value",
+        "BaseProcessor::BaseProcessor",
+        "BaseProcessor::~BaseProcessor",
+        "BaseProcessor::label",
+        "BaseProcessor::scale_value",
+        "DerivedProcessor::DerivedProcessor",
+        "DerivedProcessor::~DerivedProcessor",
+        "DerivedProcessor::process",
+        "DerivedProcessor::label",
+        "DerivedProcessor::adjust",
+        "select_processor_label",
+        "sum_row_array",
+        "sum_grid_array",
+        "allocate_line",
+        "release_line",
+        "allocate_cube",
+        "release_cube",
+        "run_cpp_syntax_fixture",
+    }
+    assert required_blocks.issubset(names)
+
+    forbidden_blocks = {
+        "name_",
+        "process",
+        "label",
+        "adjust",
+        "BaseProcessor",
+        "DerivedProcessor",
+    }
+    assert names.isdisjoint(forbidden_blocks)
+
+    blocks_by_name = {block["block_name"]: block for block in model["blocks"]}
+    assert blocks_by_name["DerivedProcessor::adjust"]["inputs"] == [
+        "mutable_ref",
+        "readonly_ref",
+        "tag",
+    ]
+    assert blocks_by_name["sum_row_array"]["inputs"] == ["row", "count"]
+    assert blocks_by_name["sum_grid_array"]["inputs"] == ["grid"]
+
+    run_callees = _direct_callees(model, "run_cpp_syntax_fixture")
+    assert {
+        "sum_row_array",
+        "sum_grid_array",
+        "DerivedProcessor::process",
+        "allocate_line",
+        "allocate_cube",
+        "release_cube",
+        "release_line",
+        "clamp_value",
+    }.issubset(run_callees)
+    assert "DerivedProcessor::adjust" in _direct_callees(model, "DerivedProcessor::process")
+    assert "BaseProcessor::scale_value" in _direct_callees(model, "DerivedProcessor::adjust")
+    assert "BaseProcessor::label" in _direct_callees(model, "select_processor_label")
+
+    sequence_model = build_sequence_execution_model(model)
+    sequence_text = json.dumps(sequence_model)
+    for name in required_blocks:
+        assert name in sequence_text
