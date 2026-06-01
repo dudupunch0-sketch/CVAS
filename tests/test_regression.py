@@ -304,6 +304,14 @@ def test_gcc_dump_command_uses_gcc_10_2_compatible_flags(monkeypatch, tmp_path):
     assert "-DDEBUG=1" in cmd
     assert cmd[-1] == str(source_file.resolve())
 
+    metadata_command = metadata["command"]
+    assert metadata["command_path_policy"] == "normalized"
+    assert metadata_command.startswith("gcc -c -o ")
+    assert "<gcc-dump-dir>/cvas-gcc-dump.o" in metadata_command
+    assert metadata_command.endswith("model.c")
+    assert str(tmp_path) not in metadata_command
+    assert str(source_file.resolve()) not in metadata_command
+
 
 def test_full_mode_malformed_compile_db_reports_gcc_dump_failure(tmp_path):
     source_file = tmp_path / "model.c"

@@ -18,6 +18,7 @@ from json_to_html import build_sequence_execution_model  # noqa: E402
 CVAS_PARSER = ROOT_DIR / "src" / "cvas_mvp.py"
 SAMPLE_C = ROOT_DIR / "test_examples.c"
 CPP_FIXTURE = ROOT_DIR / "tests" / "fixtures" / "syntax" / "cpp_syntax_coverage.cpp"
+FULL_SAMPLE_JSON = ROOT_DIR / "docs" / "test_examples_output_full.json"
 
 
 def _run_cvas(input_path: Path, *extra_args: str) -> dict:
@@ -197,6 +198,19 @@ def test_sample_cmodel_c_syntax_markers_are_present():
     assert re.search(r"\bwhile\s*\(", source), "missing while loop"
     assert "++" in source, "missing increment syntax"
     assert "--" in source, "missing decrement syntax"
+
+
+def test_checked_in_full_sample_gcc_dump_command_is_reproducible():
+    model = json.loads(FULL_SAMPLE_JSON.read_text(encoding="utf-8"))
+    gcc_dump = model.get("gcc_dump", {})
+    command = str(gcc_dump.get("command", ""))
+
+    assert gcc_dump.get("status") == "ok"
+    assert gcc_dump.get("command_path_policy") == "normalized"
+    assert "<gcc-dump-dir>/cvas-gcc-dump.o" in command
+    assert "test_examples.c" in command
+    assert "/tmp/cvas-gcc-dump-" not in command
+    assert str(ROOT_DIR) not in command
 
 
 def test_cpp_syntax_fixture_contains_target_cpp_patterns():

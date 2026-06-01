@@ -597,7 +597,39 @@ def build_sequence_execution_model(data: dict) -> dict:
     dependency_layout = apply_layout(dependency_column_by_block, dependency_critical_blocks)
     dependency_layout["order_kind"] = "static_dependency_layout"
 
-    def pipeline_stage_number(function_name: object) -> int | None:
+    def int_or_none(value: object) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    pipeline_stage_by_block: dict[str, dict[str, object]] = {}
+    pipeline_stage_by_function: dict[str, dict[str, object]] = {}
+    pipeline_stages = _as_sequence_dict(flow.get("pipeline_stages"))
+    pipeline_stage_items = pipeline_stages.get("items")
+    if isinstance(pipeline_stage_items, list):
+        for item in pipeline_stage_items:
+            if not isinstance(item, dict):
+                continue
+            stage_number = int_or_none(item.get("stage", item.get("stage_number")))
+            if stage_number is None:
+                continue
+            label = str(item.get("stage_label") or item.get("label") or "")
+            role = str(item.get("lane_role") or item.get("role") or "lane").lower()
+            stage_info: dict[str, object] = {
+                "stage": stage_number,
+                "label": label,
+                "role": role,
+                "source": "explicit",
+            }
+            block_id = item.get("block_id")
+            function_name = item.get("function")
+            if block_id not in (None, ""):
+                pipeline_stage_by_block[str(block_id)] = stage_info
+            if function_name not in (None, ""):
+                pipeline_stage_by_function[str(function_name)] = stage_info
+
+    def pipeline_stage_number_from_name(function_name: object) -> int | None:
         match = re.search(r"(?:^|_)stage(\d+)(?:_|$)", str(function_name or "").lower())
         if not match:
             return None
@@ -606,24 +638,54 @@ def build_sequence_execution_model(data: dict) -> dict:
         except ValueError:
             return None
 
+    def pipeline_stage_info(step: dict) -> dict[str, object] | None:
+        block_id = step.get("block_id")
+        if block_id is not None and str(block_id) in pipeline_stage_by_block:
+            return pipeline_stage_by_block[str(block_id)]
+        function_name = str(step.get("function") or "")
+        if function_name in pipeline_stage_by_function:
+            return pipeline_stage_by_function[function_name]
+        stage_number = pipeline_stage_number_from_name(function_name)
+        if stage_number is None:
+            return None
+        lane_role = "join" if "join" in function_name.lower() or "final" in function_name.lower() else "lane"
+        return {
+            "stage": stage_number,
+            "label": "",
+            "role": lane_role,
+            "source": "name_heuristic",
+        }
+
     def pipeline_lane_sort_key(step: dict) -> tuple[int, int, str]:
         function_name = str(step.get("function") or "").lower()
-        is_join = 1 if "join" in function_name or "final" in function_name else 0
+        info = pipeline_stage_info(step) or {}
+        role = str(info.get("role") or "").lower()
+        is_join = 1 if role in {"join", "final", "finalize"} or "join" in function_name or "final" in function_name else 0
         return (is_join, step_sort_key(step)[0], function_name)
 
+    stage_label_by_number: dict[int, str] = {}
     stage_numbers = sorted(
         {
             stage_number
             for step in steps_raw
-            for stage_number in [pipeline_stage_number(step.get("function"))]
+            for info in [pipeline_stage_info(step)]
+            for stage_number in [int_or_none(info.get("stage")) if info else None]
             if stage_number is not None
         }
     )
+    for step in steps_raw:
+        info = pipeline_stage_info(step)
+        if not info:
+            continue
+        stage_number = int_or_none(info.get("stage"))
+        label = str(info.get("label") or "")
+        if stage_number is not None and label and stage_number not in stage_label_by_number:
+            stage_label_by_number[stage_number] = label
     pipeline_column_by_stage = {stage_number: index + 1 for index, stage_number in enumerate(stage_numbers)}
     pipeline_column_by_block: dict[str, int] = {}
     pipeline_lane_by_block: dict[str, int] = {}
 
-    non_stage_steps = [step for step in steps_raw if pipeline_stage_number(step.get("function")) is None]
+    non_stage_steps = [step for step in steps_raw if pipeline_stage_info(step) is None]
     for lane, step in enumerate(non_stage_steps):
         block_id = str(step.get("block_id"))
         pipeline_column_by_block[block_id] = 0
@@ -633,7 +695,7 @@ def build_sequence_execution_model(data: dict) -> dict:
         stage_steps = [
             step
             for step in steps_raw
-            if pipeline_stage_number(step.get("function")) == stage_number
+            if (pipeline_stage_info(step) or {}).get("stage") == stage_number
         ]
         for lane, step in enumerate(sorted(stage_steps, key=pipeline_lane_sort_key)):
             block_id = str(step.get("block_id"))
@@ -645,9 +707,23 @@ def build_sequence_execution_model(data: dict) -> dict:
         lane = pipeline_lane_by_block.get(step["block_id"])
         if lane is not None:
             step["lane"] = lane
+        source_step = step_by_block_id.get(step["block_id"])
+        if source_step:
+            info = pipeline_stage_info(source_step)
+            if info:
+                step["pipeline_stage"] = info.get("stage")
+                step["pipeline_stage_source"] = info.get("source")
+                step["pipeline_lane_role"] = info.get("role")
+                if info.get("label"):
+                    step["pipeline_stage_label"] = info.get("label")
     pipeline_layout["lanes"] = max((step["lane"] for step in pipeline_layout["steps"]), default=-1) + 1
     pipeline_layout["order_kind"] = "pipeline_stage_layout"
-    pipeline_layout["column_labels"] = ["Entry / utility"] + [f"Stage {stage_number}" for stage_number in stage_numbers]
+    pipeline_layout["column_labels"] = ["Entry / utility"] + [
+        f"Stage {stage_number}: {stage_label_by_number[stage_number]}"
+        if stage_label_by_number.get(stage_number)
+        else f"Stage {stage_number}"
+        for stage_number in stage_numbers
+    ]
 
     return {
         "schema": "sequence-execution-diagram-v2",
@@ -1447,6 +1523,8 @@ def build_html(data: dict) -> str:
     sequenceZoom: 1,
     sequenceOrderMode: "call",
     sequenceLabelMode: "compact",
+    sequenceEdgeDensityMode: "all",
+    sequenceStageFilter: "all",
     sequenceToggles: {{ showDataFlow: true, showExecution: true, showControl: false, showCritical: true }},
     sequenceBlockMapsByMode: {{ call: {{}}, dependency: {{}} }},
     sequenceBlockMap: {{}},
@@ -1966,6 +2044,8 @@ def build_html(data: dict) -> str:
       version: 5,
       renderer: "sequence-execution-board",
       sequence_order_mode: mode,
+      sequence_edge_density_mode: state.sequenceEdgeDensityMode || "all",
+      sequence_stage_filter: state.sequenceStageFilter || "all",
       nodes: state.sequenceMap || {{}},
       groups: state.sequenceGroupMap || {{}},
       sequence_block_positions_by_mode: sequenceBlockMapsByMode,
@@ -1977,6 +2057,10 @@ def build_html(data: dict) -> str:
     const payload = data && typeof data === "object" ? data : {{}};
     state.sequenceMap = payload.nodes && typeof payload.nodes === "object" ? payload.nodes : {{}};
     state.sequenceGroupMap = payload.groups && typeof payload.groups === "object" ? payload.groups : {{}};
+    if (payload.sequence_edge_density_mode) state.sequenceEdgeDensityMode = String(payload.sequence_edge_density_mode);
+    if (payload.sequence_stage_filter !== undefined && payload.sequence_stage_filter !== null) {{
+      state.sequenceStageFilter = String(payload.sequence_stage_filter);
+    }}
     const mapsByMode = payload.sequence_block_positions_by_mode;
     if (mapsByMode && typeof mapsByMode === "object") {{
       state.sequenceBlockMapsByMode = {{}};
@@ -2009,6 +2093,74 @@ def build_html(data: dict) -> str:
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+  }}
+
+  function exportSequenceMapPayload(state) {{
+    return serializeSequenceMap(state);
+  }}
+
+  function importSequenceMapPayload(state, payload) {{
+    loadSequenceMapPayload(state, payload);
+    return serializeSequenceMap(state);
+  }}
+
+  function installViewerTestHooks(state) {{
+    const params = new URLSearchParams(window.location.search || "");
+    if (!params.has("test-hooks")) return;
+    if (document.getElementById("cvas-viewer-test-hooks")) return;
+    const panel = document.createElement("section");
+    panel.id = "cvas-viewer-test-hooks";
+    panel.setAttribute("data-testid", "cvas-viewer-test-hooks");
+    panel.style.position = "fixed";
+    panel.style.left = "12px";
+    panel.style.bottom = "12px";
+    panel.style.zIndex = "1000";
+    panel.style.display = "grid";
+    panel.style.gap = "6px";
+    panel.style.width = "340px";
+    panel.style.padding = "8px";
+    panel.style.border = "1px solid #94a3b8";
+    panel.style.background = "#ffffff";
+    panel.style.boxShadow = "0 8px 24px rgba(15, 23, 42, 0.16)";
+
+    const input = document.createElement("textarea");
+    input.id = "cvas-test-map-input";
+    input.setAttribute("data-testid", "cvas-test-map-input");
+    input.rows = 4;
+    const output = document.createElement("textarea");
+    output.id = "cvas-test-map-output";
+    output.setAttribute("data-testid", "cvas-test-map-output");
+    output.rows = 4;
+    output.readOnly = true;
+
+    const exportBtn = document.createElement("button");
+    exportBtn.id = "cvas-test-export-map";
+    exportBtn.setAttribute("data-testid", "cvas-test-export-map");
+    exportBtn.type = "button";
+    exportBtn.textContent = "Export payload";
+    exportBtn.addEventListener("click", () => {{
+      output.value = JSON.stringify(exportSequenceMapPayload(state), null, 2);
+    }});
+
+    const importBtn = document.createElement("button");
+    importBtn.id = "cvas-test-import-map";
+    importBtn.setAttribute("data-testid", "cvas-test-import-map");
+    importBtn.type = "button";
+    importBtn.textContent = "Import payload";
+    importBtn.addEventListener("click", () => {{
+      try {{
+        const rawPayload = input.value || output.value || "{{}}";
+        output.value = JSON.stringify(importSequenceMapPayload(state, JSON.parse(rawPayload)), null, 2);
+      }} catch (err) {{
+        output.value = JSON.stringify({{ error: String(err) }}, null, 2);
+      }}
+    }});
+
+    panel.appendChild(input);
+    panel.appendChild(output);
+    panel.appendChild(exportBtn);
+    panel.appendChild(importBtn);
+    document.body.appendChild(panel);
   }}
 
   function bindUI(state) {{
@@ -2077,6 +2229,7 @@ def build_html(data: dict) -> str:
         sequencePanel.hidden = false;
         tabSequence.classList.add("active");
         tabDiagram.classList.remove("active");
+        redrawActiveSequenceEdges(state);
         requestAnimationFrame(() => {{
           redrawActiveSequenceEdges(state);
         }});
@@ -2247,6 +2400,7 @@ def build_html(data: dict) -> str:
 
     renderSequence(state);
     bindUI(state);
+    installViewerTestHooks(state);
     // Optional fetch-based override for workflows that keep function_io.json outside the embedded build.
     autoLoadFunctionIO(state);
   }}
@@ -2536,6 +2690,69 @@ def build_html(data: dict) -> str:
     toolbar.appendChild(wrapper);
   }}
 
+  function renderSequenceEdgeDensityControls(state, toolbar) {{
+    const wrapper = document.createElement("label");
+    wrapper.className = "mode-group";
+    wrapper.title = "Sequence edge density: all edges, stage-local edges, or selected stage only";
+    wrapper.appendChild(document.createTextNode("Edges"));
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", "Sequence edge density");
+    [
+      ["all", "All edges"],
+      ["stage_local", "Stage-local edges"],
+      ["selected_stage", "Selected stage only"]
+    ].forEach(([value, label]) => {{
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      select.appendChild(option);
+    }});
+    select.value = state.sequenceEdgeDensityMode || "all";
+    select.addEventListener("change", () => {{
+      state.sequenceEdgeDensityMode = select.value;
+      redrawActiveSequenceEdges(state);
+    }});
+    wrapper.appendChild(select);
+    toolbar.appendChild(wrapper);
+  }}
+
+  function getSequenceStageFilterOptions(model) {{
+    const stages = new Set();
+    (model.steps || []).forEach(step => {{
+      if (step.pipeline_stage !== undefined && step.pipeline_stage !== null) {{
+        stages.add(String(step.pipeline_stage));
+      }}
+    }});
+    return Array.from(stages).sort((a, b) => Number(a) - Number(b));
+  }}
+
+  function renderSequenceStageFilterControls(state, model, toolbar) {{
+    const wrapper = document.createElement("label");
+    wrapper.className = "mode-group";
+    wrapper.title = "Limit pipeline edges to a selected stage";
+    wrapper.appendChild(document.createTextNode("Stage"));
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", "Sequence stage filter");
+    const all = document.createElement("option");
+    all.value = "all";
+    all.textContent = "All stages";
+    select.appendChild(all);
+    getSequenceStageFilterOptions(model).forEach(stage => {{
+      const option = document.createElement("option");
+      option.value = stage;
+      option.textContent = `Stage ${{stage}}`;
+      select.appendChild(option);
+    }});
+    select.value = state.sequenceStageFilter || "all";
+    select.disabled = select.options.length <= 1;
+    select.addEventListener("change", () => {{
+      state.sequenceStageFilter = select.value;
+      redrawActiveSequenceEdges(state);
+    }});
+    wrapper.appendChild(select);
+    toolbar.appendChild(wrapper);
+  }}
+
   function renderSequenceToolbar(state, shell, model) {{
     const toolbar = document.createElement("div");
     toolbar.className = "sequence-toolbar";
@@ -2544,6 +2761,8 @@ def build_html(data: dict) -> str:
     toolbar.appendChild(title);
     renderSequenceOrderModeControls(state, model, toolbar);
     renderSequenceLabelModeControls(state, toolbar);
+    renderSequenceEdgeDensityControls(state, toolbar);
+    renderSequenceStageFilterControls(state, getActiveSequenceModel(state, model), toolbar);
 
     function addToggle(label, key) {{
       const wrapper = document.createElement("label");
@@ -2670,6 +2889,7 @@ def build_html(data: dict) -> str:
     shell.appendChild(board);
     container.appendChild(shell);
     applySequenceZoom(state);
+    drawSequenceExecutionEdges(board, activeModel, state);
     requestAnimationFrame(() => drawSequenceExecutionEdges(board, activeModel, state));
   }}
 
@@ -2688,7 +2908,37 @@ def build_html(data: dict) -> str:
     }}, null, 2);
   }}
 
-  function shouldDrawSequenceEdge(edge, state) {{
+  function sequenceStageByBlock(model) {{
+    const map = new Map();
+    (model.steps || []).forEach(step => {{
+      if (step && step.block_id && step.pipeline_stage !== undefined && step.pipeline_stage !== null) {{
+        map.set(step.block_id, String(step.pipeline_stage));
+      }}
+    }});
+    return map;
+  }}
+
+  function visibleSequenceEdgesForMode(model, state) {{
+    const edges = Array.isArray(model.edges) ? model.edges : [];
+    if (model.order_mode !== "pipeline") return edges;
+    const densityMode = state.sequenceEdgeDensityMode || "all";
+    if (densityMode === "all") return edges;
+    const stageByBlock = sequenceStageByBlock(model);
+    const selectedStage = String(state.sequenceStageFilter || "all");
+    return edges.filter(edge => {{
+      const sourceStage = stageByBlock.get(edge.source_block_id);
+      const destinationStage = stageByBlock.get(edge.destination_block_id);
+      if (!sourceStage || !destinationStage) return false;
+      if (densityMode === "stage_local") return sourceStage === destinationStage;
+      if (densityMode === "selected_stage") {{
+        if (selectedStage === "all") return sourceStage === destinationStage;
+        return sourceStage === selectedStage || destinationStage === selectedStage;
+      }}
+      return true;
+    }});
+  }}
+
+  function shouldDrawSequenceEdge(edge, state, model) {{
     if (edge.kind === "exec") return state.sequenceToggles.showExecution;
     if (edge.kind === "control") return state.sequenceToggles.showControl;
     return state.sequenceToggles.showDataFlow;
@@ -2725,8 +2975,8 @@ def build_html(data: dict) -> str:
       </defs>`;
     const zoom = state.sequenceZoom || 1;
     const rects = sequenceCardRects(board, zoom);
-    (model.edges || []).forEach(edge => {{
-      if (!shouldDrawSequenceEdge(edge, state)) return;
+    visibleSequenceEdgesForMode(model, state).forEach(edge => {{
+      if (!shouldDrawSequenceEdge(edge, state, model)) return;
       const from = rects.get(edge.source_block_id);
       const to = rects.get(edge.destination_block_id);
       if (!from || !to) return;
@@ -2866,7 +3116,9 @@ def build_html(data: dict) -> str:
   function redrawActiveSequenceEdges(state) {{
     const execBoard = document.querySelector("#sequence-content .sequence-exec-board");
     if (execBoard) {{
-      requestAnimationFrame(() => drawSequenceExecutionEdges(execBoard, getActiveSequenceModel(state, SEQUENCE_EXECUTION_MODEL), state));
+      const activeModel = getActiveSequenceModel(state, SEQUENCE_EXECUTION_MODEL);
+      drawSequenceExecutionEdges(execBoard, activeModel, state);
+      requestAnimationFrame(() => drawSequenceExecutionEdges(execBoard, activeModel, state));
       return;
     }}
     const legacyBoard = document.querySelector("#sequence-content .seq-board");

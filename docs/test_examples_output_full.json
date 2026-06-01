@@ -28397,6 +28397,7 @@
     ],
     "diagnostics": [],
     "returncode": 0,
-    "command": "/usr/bin/gcc -c -o /tmp/cvas-gcc-dump-9vf0kelm/cvas-gcc-dump.o -fdump-tree-cfg -x c -std=c11 -DCVAS_START= -DCVAS_END= -Wno-error=implicit-function-declaration /home/dudupunch0/company/cvas/CVAS/.worktrees/sample-cmodel-syntax-coverage/test_examples.c"
+    "command": "gcc -c -o '<gcc-dump-dir>/cvas-gcc-dump.o' -fdump-tree-cfg -x c -std=c11 -DCVAS_START= -DCVAS_END= -Wno-error=implicit-function-declaration test_examples.c",
+    "command_path_policy": "normalized"
   }
 }

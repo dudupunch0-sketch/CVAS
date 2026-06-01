@@ -1,12 +1,34 @@
 # Sample C-model Syntax Coverage Handoff Plan
 
-> Status: draft PR handoff for the next LLM/agent. This branch preserves the current work so it can be reviewed and continued; it is not claiming the sample artifact work is fully finalized.
+> Status: original handoff plus follow-up completion notes. The unresolved
+> artifact synchronization and full-mode determinism items were completed after
+> this handoff by normalizing `gcc_dump.command` metadata, regenerating the
+> checked-in fast/full sample artifacts, and browser-checking the Diagram and
+> Sequence tabs.
 
 **Goal:** Expand the checked-in CVAS sample inputs so they exercise a deeper, more realistic C-model pipeline and add a viewer layout that can show stage-named helpers as parallel pipeline lanes.
 
 **Base:** `origin/main` at `b2fb224 feat: add sequence call-order viewer controls (#62)`.
 
 **Working branch:** `feat/sample-cmodel-syntax-coverage`.
+
+## Follow-up completion notes
+
+- Full-mode JSON determinism policy: `src/cvas_gcc_dump.py` still executes GCC
+  with the real local argv, but serializes `gcc_dump.command` as a normalized
+  diagnostic display string with `command_path_policy: "normalized"`. GCC dump
+  temp directories and local source checkout paths no longer enter checked-in
+  full-mode JSON/HTML sample artifacts.
+- Sample artifacts were regenerated from the final generator:
+  `docs/test_examples_output_fast.html`,
+  `docs/test_examples_output_fast.json`,
+  `docs/test_examples_output_full.html`, and
+  `docs/test_examples_output_full.json`.
+- Contract coverage now includes a checked-in full-sample assertion that rejects
+  `/tmp/cvas-gcc-dump-*` and local repo paths in `gcc_dump.command`.
+- The remaining pipeline layout boundary is intentional: `Pipeline stage order`
+  remains a static name-derived visualization, not a runtime, HLS, or
+  cycle-accurate schedule.
 
 ---
 
@@ -147,23 +169,28 @@ Observed comparison:
 
 ---
 
-## Known unfinished items / risks
+## Handoff unfinished items / follow-up status
 
-### 1. HTML sample artifacts are likely stale
+### 1. HTML sample artifacts were likely stale
 
-The checked-in fast HTML did not contain the newly generated embedded `Pipeline stage order` model when compared with a fresh wrapper output. A next agent should regenerate and review the HTML artifacts before marking the PR ready.
+Original handoff risk: the checked-in fast HTML did not contain the newly
+generated embedded `Pipeline stage order` model when compared with a fresh
+wrapper output.
 
-### 2. Full-mode JSON has temp-path nondeterminism
+Follow-up status: resolved by regenerating the checked-in fast/full HTML
+artifacts from the final `json_to_html.py` generator.
 
-The full-mode JSON embeds `gcc_dump.command`, including a temporary directory path. Fresh regeneration changes that path and therefore changes the JSON/HTML hash even when the semantic model is otherwise unchanged.
+### 2. Full-mode JSON had temp-path nondeterminism
 
-A next agent should decide one of these approaches:
+Original handoff risk: the full-mode JSON embedded `gcc_dump.command`,
+including a temporary directory path. Fresh regeneration changed that path and
+therefore changed the JSON/HTML hash even when the semantic model was otherwise
+unchanged.
 
-1. Normalize or omit temp-specific command paths in checked-in sample artifacts; or
-2. Accept generated full artifacts as environment-specific and document that regeneration may change the command string; or
-3. Adjust tests/docs so the temp path is ignored where appropriate.
-
-Do not silently claim full sample artifacts are deterministic until this is resolved.
+Follow-up status: resolved with option 1. `gcc_dump.command` is now serialized
+as a normalized diagnostic display command, and
+`command_path_policy: "normalized"` records that policy. The subprocess still
+receives the exact local argv.
 
 ### 3. Pipeline layout is heuristic
 
@@ -171,21 +198,35 @@ The stage layout currently depends on stage-number naming in function names. Thi
 
 ### 4. Manual viewer QA is still needed
 
-Automated tests pass, but the Diagram and Sequence tabs were not manually inspected in a browser after the latest branch state. The next agent should verify:
+Original handoff risk: automated tests passed, but the Diagram and Sequence tabs
+had not been manually inspected in a browser after the latest branch state.
+Follow-up status: complete after browser QA of regenerated fast/full artifacts.
+The checked items were:
 
 - Order selector includes `Call order`, `Dependency order`, and `Pipeline stage order`.
 - Pipeline mode groups `bpc_stage1_*` through `bpc_stage6_*` into stage columns.
 - Join/final cards sit below lane/helper cards.
-- Existing drag/export/import/reset controls still work for all order modes.
+- Drag/reset controls work for all order modes. Export/import controls are
+  present and enabled; Export was clicked without browser console errors.
+  Browser automation cannot complete the native file-picker import path, so
+  future changes to import handling should still be checked in a desktop
+  browser.
 - Diagram tab remains usable with the much larger sample.
 
 ### 5. Large generated artifact diff needs reviewer attention
 
-The JSON/HTML sample artifacts produce a large diff. Before final merge, make sure the generated files correspond to the intended source and viewer code. Avoid hand-editing generated JSON/HTML unless the generator itself is also updated.
+The JSON/HTML sample artifacts can produce a large diff. Before future merges,
+make sure generated files correspond to the intended source and viewer code.
+Avoid hand-editing generated JSON/HTML unless the generator itself is also
+updated.
 
 ---
 
-## Recommended continuation plan
+## Original recommended continuation plan
+
+The steps below are retained as the original handoff checklist. The completed
+follow-up resolved the artifact regeneration and deterministic full-mode command
+policy above.
 
 ### Task 1: Re-ground branch state
 
