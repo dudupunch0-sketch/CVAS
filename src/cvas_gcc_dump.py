@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import shlex
 import subprocess
 import tempfile
 from pathlib import Path
@@ -23,6 +24,46 @@ def _gcc_language_flag(language: str) -> str:
 
 def _dump_files(directory: Path) -> List[str]:
     return sorted(path.name for path in directory.glob("*.cfg"))
+
+
+def _normalized_command_for_metadata(
+    cmd: List[str],
+    *,
+    compiler: str,
+    compiler_path: str,
+    tmp_path: Path,
+    parse_target: Path,
+    source_path: Optional[Path],
+    suffix: str,
+) -> str:
+    """Return a stable diagnostic command for JSON artifacts.
+
+    The subprocess still receives the exact argv in ``cmd``. The serialized
+    metadata intentionally hides temporary GCC dump paths and local checkout
+    paths so checked-in full-mode artifacts can be regenerated deterministically.
+    """
+
+    tmp_dir = str(tmp_path)
+    tmp_prefix = tmp_dir + "/"
+    parse_target_arg = str(parse_target)
+    if source_path is not None and source_path.exists():
+        source_arg = source_path.name
+    else:
+        source_arg = f"<gcc-dump-dir>/input{suffix}"
+
+    display_args: List[str] = []
+    for arg in cmd:
+        if arg == compiler_path:
+            display_args.append(compiler)
+        elif arg == parse_target_arg:
+            display_args.append(source_arg)
+        elif arg == tmp_dir:
+            display_args.append("<gcc-dump-dir>")
+        elif arg.startswith(tmp_prefix):
+            display_args.append(f"<gcc-dump-dir>/{Path(arg).name}")
+        else:
+            display_args.append(arg)
+    return shlex.join(display_args)
 
 
 def run_gcc_dump(
@@ -130,7 +171,16 @@ def run_gcc_dump(
             {
                 "status": "ok" if result.returncode == 0 else "failed",
                 "returncode": result.returncode,
-                "command": " ".join(cmd),
+                "command": _normalized_command_for_metadata(
+                    cmd,
+                    compiler=compiler,
+                    compiler_path=compiler_path,
+                    tmp_path=tmp_path,
+                    parse_target=parse_target,
+                    source_path=source_path,
+                    suffix=suffix,
+                ),
+                "command_path_policy": "normalized",
                 "dump_files": _dump_files(cwd),
                 "diagnostics": diagnostics.splitlines()[:40],
             }

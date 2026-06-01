@@ -129,6 +129,7 @@ python src/cvas_cli.py model.c --analysis-mode full --compile-arg=-Iinclude -o o
 `--compile-arg`와 `--compile-db`는 full mode의 중립 compile flag alias입니다. `--clang-arg`와 `--clang-compile-db` 이름도 legacy 호환성을 위해 계속 유지됩니다. 현재 `full` 모드에서는 include/define/undef/system-include/std/language 정보를 재구성해 GCC dump pass에 전달하는 용도로 사용됩니다.
 
 `full` 모드의 GCC dump는 보강 metadata입니다. `gcc`/`g++`가 없거나 compiler diagnostic이 발생해도 일반적으로 JSON 생성 자체를 막지 않고 `gcc_dump.status`에 `ok`, `failed`, `unavailable` 중 하나로 기록합니다.
+`gcc_dump.command`는 JSON/HTML 산출물 재생성을 안정화하기 위한 진단용 표시 명령입니다. 실제 subprocess argv는 로컬 임시 디렉터리와 체크아웃 경로를 사용하지만, 직렬화된 command는 `command_path_policy: "normalized"`와 함께 GCC dump 임시 경로 및 입력 파일 경로를 정규화합니다.
 
 ### 오프라인 다이어그램 뷰어 (JSON → HTML)
 
@@ -170,6 +171,8 @@ python cvas_wrapper.py test_examples.c docs/test_examples_output_full.html \
 - `Diagram` 탭: operation-flow 중심 block diagram (data-flow / execution-order / call-graph 토글)
 - `Sequence` 탭: v3 `flow.sequence_timeline[]`이 있으면 timeline card UI를 우선 렌더링하고, v2 JSON처럼 `sequence_timeline`이 없으면 기존 `flow.call_sequence` 기반 legacy sequence view로 fallback
 - `Sequence` 탭의 Order selector는 `Call order`, `Dependency order`, `Pipeline stage order`를 제공합니다. Pipeline stage order는 `bpc_stage1_*`처럼 stage 번호가 들어간 함수들을 같은 stage column에 묶고 lane/helper들을 병렬 row로 펼칩니다.
+- Pipeline stage order는 선택적으로 `flow.pipeline_stages.items[]` metadata를 먼저 사용합니다. 각 item은 `block_id` 또는 `function`, `stage`, 선택적 `stage_label`, `lane_role`을 담을 수 있고, metadata가 없으면 기존 함수명 heuristic으로 fallback합니다.
+- 브라우저 E2E에서는 `?test-hooks=1`로 viewer를 열어 DOM 기반 Sequence map export/import hook을 사용할 수 있습니다. 이 hook은 native download/file-picker 없이 같은 serialization/import code path를 검증하기 위한 테스트 전용 표면입니다.
 
 v3 Sequence card는 각 static block-order step에 대해 다음 정보를 보여줍니다.
 

@@ -271,6 +271,94 @@ def minimal_v3_call_order_model() -> dict:
     }
 
 
+def minimal_v3_explicit_pipeline_model() -> dict:
+    data = minimal_v3_parallel_model()
+    data["blocks"] = [
+        {"block_id": "B_ENTRY", "block_name": "top", "inputs": [], "outputs": ["return"], "estimated_cycles": 1},
+        {"block_id": "B_FETCH", "block_name": "fetch_pixel", "inputs": [], "outputs": ["raw"], "estimated_cycles": 1},
+        {"block_id": "B_FILTER", "block_name": "filter_pixel", "inputs": ["raw"], "outputs": ["score"], "estimated_cycles": 1},
+        {"block_id": "B_JOIN", "block_name": "combine_pixel", "inputs": ["raw", "score"], "outputs": ["pixel"], "estimated_cycles": 1},
+        {"block_id": "B_STORE", "block_name": "store_pixel", "inputs": ["pixel"], "outputs": [], "estimated_cycles": 1},
+    ]
+    data["flow"]["execution_order"] = ["B_ENTRY", "B_FETCH", "B_FILTER", "B_JOIN", "B_STORE"]
+    data["flow"]["sequence_timeline"] = [
+        {
+            "step_id": f"T_{index:04d}_{block['block_id']}",
+            "order_index": index,
+            "block_id": block["block_id"],
+            "function": block["block_name"],
+            "call_ids_as_caller": [],
+            "call_ids_as_callee": [],
+            "incoming_signal_ids": [],
+            "outgoing_signal_ids": [],
+            "read_write_summary": {
+                "reads_from_other": [],
+                "read_by_other": [],
+                "writes_to_other": [],
+                "written_by_other": [],
+            },
+        }
+        for index, block in enumerate(data["blocks"])
+    ]
+    data["signals"] = [
+        {
+            "signal_id": "S_FETCH_FILTER",
+            "source_id": "B_FETCH",
+            "source_type": "block",
+            "destination_id": "B_FILTER",
+            "destination_type": "block",
+            "signal_name": "raw",
+            "direction": "out",
+            "kind": "call_return",
+            "role": "write",
+        },
+        {
+            "signal_id": "S_FILTER_JOIN",
+            "source_id": "B_FILTER",
+            "source_type": "block",
+            "destination_id": "B_JOIN",
+            "destination_type": "block",
+            "signal_name": "score",
+            "direction": "out",
+            "kind": "call_return",
+            "role": "write",
+        },
+        {
+            "signal_id": "S_JOIN_STORE",
+            "source_id": "B_JOIN",
+            "source_type": "block",
+            "destination_id": "B_STORE",
+            "destination_type": "block",
+            "signal_name": "pixel",
+            "direction": "out",
+            "kind": "call_return",
+            "role": "write",
+        },
+    ]
+    data["flow"]["dependencies"] = {
+        "inter_block": [
+            {
+                "signal_id": signal["signal_id"],
+                "source_id": signal["source_id"],
+                "destination_id": signal["destination_id"],
+                "kind": signal["kind"],
+                "role": signal["role"],
+            }
+            for signal in data["signals"]
+        ]
+    }
+    data["flow"]["pipeline_stages"] = {
+        "source": "test-annotation",
+        "items": [
+            {"block_id": "B_FETCH", "stage": 2, "stage_label": "Predict", "lane_role": "lane"},
+            {"function": "filter_pixel", "stage": 2, "stage_label": "Predict", "lane_role": "lane"},
+            {"block_id": "B_JOIN", "stage": 2, "stage_label": "Predict", "lane_role": "join"},
+            {"block_id": "B_STORE", "stage": 4, "stage_label": "Output", "lane_role": "final"},
+        ],
+    }
+    return data
+
+
 def test_viewer_accepts_v2_without_schema_version() -> None:
     html = build_html(minimal_v2_model())
 
@@ -336,6 +424,30 @@ def test_sequence_execution_model_exposes_layout_mode_metadata() -> None:
     assert modes["pipeline"]["label"] == "Pipeline stage order"
     assert modes["pipeline"]["order_kind"] == "pipeline_stage_layout"
     assert "stage" in modes["pipeline"]["description"].lower()
+
+
+def test_sequence_execution_model_prefers_explicit_pipeline_stage_metadata() -> None:
+    model = build_sequence_execution_model(minimal_v3_explicit_pipeline_model())
+    pipeline_layout = model["layouts"]["pipeline"]
+    steps = {step["block_id"]: step for step in pipeline_layout["steps"]}
+
+    assert pipeline_layout["column_labels"] == [
+        "Entry / utility",
+        "Stage 2: Predict",
+        "Stage 4: Output",
+    ]
+    assert steps["B_ENTRY"]["column"] == 0
+    assert steps["B_FETCH"]["column"] == 1
+    assert steps["B_FILTER"]["column"] == 1
+    assert steps["B_JOIN"]["column"] == 1
+    assert steps["B_STORE"]["column"] == 2
+    assert steps["B_FETCH"]["pipeline_stage"] == 2
+    assert steps["B_FETCH"]["pipeline_stage_source"] == "explicit"
+    assert steps["B_FILTER"]["pipeline_stage_source"] == "explicit"
+    assert steps["B_JOIN"]["pipeline_lane_role"] == "join"
+    assert steps["B_STORE"]["pipeline_lane_role"] == "final"
+    assert steps["B_JOIN"]["lane"] > steps["B_FETCH"]["lane"]
+    assert steps["B_JOIN"]["lane"] > steps["B_FILTER"]["lane"]
 
 
 def test_sequence_execution_model_uses_call_graph_without_call_instances() -> None:
@@ -490,6 +602,38 @@ def test_viewer_sequence_map_controls_support_v3_and_legacy_maps() -> None:
     assert "finishSequenceDrag" in html
 
 
+def test_viewer_exposes_sequence_import_export_e2e_dom_hooks() -> None:
+    html = build_html(minimal_v3_parallel_model())
+
+    assert "exportSequenceMapPayload" in html
+    assert "importSequenceMapPayload" in html
+    assert "installViewerTestHooks" in html
+    assert "test-hooks" in html
+    assert "cvas-viewer-test-hooks" in html
+    assert "cvas-test-map-input" in html
+    assert "cvas-test-map-output" in html
+    assert "cvas-test-export-map" in html
+    assert "cvas-test-import-map" in html
+    assert "const rawPayload = input.value || output.value" in html
+
+
+def test_viewer_sequence_map_exports_edge_density_and_stage_filter_state() -> None:
+    html = build_html(minimal_v3_explicit_pipeline_model())
+
+    assert "sequenceEdgeDensityMode" in html
+    assert "sequenceStageFilter" in html
+    assert "sequence_edge_density_mode" in html
+    assert "sequence_stage_filter" in html
+    assert "renderSequenceEdgeDensityControls" in html
+    assert "renderSequenceStageFilterControls" in html
+    assert "Sequence edge density" in html
+    assert "All edges" in html
+    assert "Stage-local edges" in html
+    assert "Selected stage only" in html
+    assert "Sequence stage filter" in html
+    assert "visibleSequenceEdgesForMode" in html
+
+
 def test_viewer_reset_view_is_context_aware_for_sequence_tab() -> None:
     html = build_html(minimal_v3_parallel_model())
 
@@ -544,6 +688,16 @@ def test_viewer_sequence_edge_labels_render_at_endpoints() -> None:
     assert "sequence-edge-label target" in html
     assert "text-anchor" in html
     assert "String((x1 + x2) / 2 + 6)" not in html
+
+
+def test_viewer_sequence_edges_have_immediate_redraw_fallback() -> None:
+    html = build_html(minimal_v3_parallel_model())
+
+    assert "drawSequenceExecutionEdges(board, activeModel, state);" in html
+    assert "requestAnimationFrame(() => drawSequenceExecutionEdges(board, activeModel, state));" in html
+    assert "const activeModel = getActiveSequenceModel(state, SEQUENCE_EXECUTION_MODEL);" in html
+    assert "drawSequenceExecutionEdges(execBoard, activeModel, state);" in html
+    assert "redrawActiveSequenceEdges(state);\n        requestAnimationFrame" in html
 
 
 def test_viewer_details_panel_toggle_is_adjacent_and_two_state() -> None:
