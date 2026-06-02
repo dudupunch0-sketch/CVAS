@@ -395,7 +395,7 @@
       "inputs": [
         "raw",
         "coord",
-        "(window)[BPC_KERNEL_SIZE]"
+        "window"
       ],
       "outputs": [
         "return"
@@ -13976,7 +13976,7 @@
       "role": "read",
       "call_id": "C_B34_0002",
       "arg_index": 2,
-      "param": "(window)[BPC_KERNEL_SIZE]",
+      "param": "window",
       "expr": "scratch_window",
       "source_function": "simple_bpc_pixel",
       "destination_function": "bpc_stage1_window_lane",
@@ -17272,7 +17272,7 @@
             "callee_params": [
               "raw",
               "coord",
-              "(window)[BPC_KERNEL_SIZE]"
+              "window"
             ],
             "call_id": "C_B34_0002"
           },
@@ -18275,7 +18275,7 @@
           },
           {
             "arg_index": 2,
-            "param": "(window)[BPC_KERNEL_SIZE]",
+            "param": "window",
             "expr": "scratch_window",
             "signal_id": "S_C_B34_0002_ARG_2"
           }
@@ -20673,7 +20673,7 @@
               "role": "read",
               "signal_name": "scratch_window",
               "expr": "scratch_window",
-              "param": "(window)[BPC_KERNEL_SIZE]",
+              "param": "window",
               "arg_index": 2,
               "other_block_id": "B34",
               "other_function": "simple_bpc_pixel"
@@ -23125,7 +23125,7 @@
               "role": "read",
               "signal_name": "scratch_window",
               "expr": "scratch_window",
-              "param": "(window)[BPC_KERNEL_SIZE]",
+              "param": "window",
               "arg_index": 2,
               "other_block_id": "B5",
               "other_function": "bpc_stage1_window_lane"
@@ -24543,9 +24543,12 @@
         "bpc_stage1_window_lane": {
           "reads": [
             "coord",
-            "raw"
+            "raw",
+            "window"
           ],
-          "writes": [],
+          "writes": [
+            "window"
+          ],
           "provenance": {
             "source": "rule-based",
             "confidence": "medium"
@@ -27299,12 +27302,6 @@
       {
         "function": "bpc_stage1_window_lane",
         "name": "height",
-        "kind": "external",
-        "resolved": false
-      },
-      {
-        "function": "bpc_stage1_window_lane",
-        "name": "window",
         "kind": "external",
         "resolved": false
       },

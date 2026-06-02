@@ -395,7 +395,7 @@
       "inputs": [
         "raw",
         "coord",
-        "window"
+        "(window)[BPC_KERNEL_SIZE]"
       ],
       "outputs": [
         "return"
@@ -13976,7 +13976,7 @@
       "role": "read",
       "call_id": "C_B34_0002",
       "arg_index": 2,
-      "param": "window",
+      "param": "(window)[BPC_KERNEL_SIZE]",
       "expr": "scratch_window",
       "source_function": "simple_bpc_pixel",
       "destination_function": "bpc_stage1_window_lane",
@@ -17272,7 +17272,7 @@
             "callee_params": [
               "raw",
               "coord",
-              "window"
+              "(window)[BPC_KERNEL_SIZE]"
             ],
             "call_id": "C_B34_0002"
           },
@@ -18275,7 +18275,7 @@
           },
           {
             "arg_index": 2,
-            "param": "window",
+            "param": "(window)[BPC_KERNEL_SIZE]",
             "expr": "scratch_window",
             "signal_id": "S_C_B34_0002_ARG_2"
           }
@@ -20673,7 +20673,7 @@
               "role": "read",
               "signal_name": "scratch_window",
               "expr": "scratch_window",
-              "param": "window",
+              "param": "(window)[BPC_KERNEL_SIZE]",
               "arg_index": 2,
               "other_block_id": "B34",
               "other_function": "simple_bpc_pixel"
@@ -23125,7 +23125,7 @@
               "role": "read",
               "signal_name": "scratch_window",
               "expr": "scratch_window",
-              "param": "window",
+              "param": "(window)[BPC_KERNEL_SIZE]",
               "arg_index": 2,
               "other_block_id": "B5",
               "other_function": "bpc_stage1_window_lane"
@@ -24543,12 +24543,9 @@
         "bpc_stage1_window_lane": {
           "reads": [
             "coord",
-            "raw",
-            "window"
+            "raw"
           ],
-          "writes": [
-            "window"
-          ],
+          "writes": [],
           "provenance": {
             "source": "rule-based",
             "confidence": "medium"
@@ -27307,6 +27304,12 @@
       },
       {
         "function": "bpc_stage1_window_lane",
+        "name": "window",
+        "kind": "external",
+        "resolved": false
+      },
+      {
+        "function": "bpc_stage1_window_lane",
         "name": "matrix",
         "kind": "external",
         "resolved": false
@@ -28382,6 +28385,19 @@
   "analysis_version": "2.0",
   "project_mode": false,
   "duplicate_functions": [],
-  "analysis_mode": "fast",
-  "analysis_backend": "pycparser"
+  "analysis_mode": "full",
+  "analysis_backend": "tree-sitter+pycparser+gcc-dump",
+  "gcc_dump": {
+    "backend": "gcc",
+    "status": "ok",
+    "language": "c",
+    "standard": "c11",
+    "dump_files": [
+      "cvas-gcc-dump.c.015t.cfg"
+    ],
+    "diagnostics": [],
+    "returncode": 0,
+    "command": "gcc -c -o '<gcc-dump-dir>/cvas-gcc-dump.o' -fdump-tree-cfg -x c -std=c11 -DCVAS_START= -DCVAS_END= -Wno-error=implicit-function-declaration test_examples.c",
+    "command_path_policy": "normalized"
+  }
 }
