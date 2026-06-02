@@ -1,18 +1,20 @@
-# CVAS dependency manifest.
+# CVAS Python dependency manifest.
 #
-# Fast analysis mode is intentionally lightweight. CVAS installs pycparser for
-# AST-backed parsing and also has text fallbacks for partial analysis when AST
-# parsing is unavailable.
+# Runtime:
+# - pycparser is used by the default fast analysis path.
+# - tree-sitter plus C/C++ grammars are used by full-mode structural discovery.
 #
-# Install this file with pip to get the parser and development/test dependency.
+# Test/dev:
+# - pytest runs the regression and contract suite.
+# - jsonschema validates checked-in schema examples.
+#
+# System tools:
+# - full mode also uses system gcc/g++ for GCC dump metadata.
+# - Python clang bindings and libclang are not required for the public full path.
 
 pycparser
+tree-sitter
+tree-sitter-c
+tree-sitter-cpp
 pytest
-
-# Optional full-mode structural backend, install manually when desired:
-# tree_sitter
-# tree_sitter_c
-# tree_sitter_cpp
-#
-# Full mode uses the system gcc/g++ executables for GCC dump metadata and does
-# not require Python clang bindings or libclang.
+jsonschema

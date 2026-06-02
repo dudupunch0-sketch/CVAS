@@ -19,19 +19,13 @@ Install the Python dependencies listed in `requirements.txt`:
 pip install -r requirements.txt
 ```
 
-This installs `pycparser` for AST-backed C parsing and `pytest` for the regression test suite. The default `fast` analysis mode uses `pycparser` first and text fallback otherwise.
+This installs `pycparser` for AST-backed C parsing, tree-sitter C/C++ packages for full-mode structural discovery, `pytest` for the regression test suite, and `jsonschema` for schema validation tests. The default `fast` analysis mode uses `pycparser` first and text fallback otherwise.
 
-## Optional Analysis Backends
+## Analysis Backends
 
-### Full mode: optional tree-sitter + GCC dump
+### Full mode: tree-sitter + GCC dump
 
-`--analysis-mode full` uses optional tree-sitter C/C++ grammars for structural function discovery when these packages are installed:
-
-```bash
-pip install tree_sitter tree_sitter_c tree_sitter_cpp
-```
-
-If they are not installed, CVAS falls back to the existing fast pycparser/text path.
+`--analysis-mode full` uses the tree-sitter C/C++ grammars installed from `requirements.txt` for structural function discovery. If tree-sitter cannot parse useful functions for a given input, CVAS falls back to the existing fast pycparser/text path.
 
 ### Full mode: GCC dump
 

@@ -79,10 +79,10 @@ ISP 알고리즘 C-model 분석을 위한 고급 파서로, `CVAS_START` / `CVAS
 ## 📋 요구사항
 
 - Python 3.10 이상
-- Python-side dependencies are listed in `requirements.txt` (`pycparser`, `pytest`)
+- Python-side dependencies are listed in `requirements.txt` (`pycparser`, `tree-sitter`, `tree-sitter-c`, `tree-sitter-cpp`, `pytest`, `jsonschema`)
 - 기본 `fast` 분석은 `pycparser`를 사용하고, AST 파싱이 불가능하면 text fallback으로 최대한 JSON을 생성
 - `--analysis-mode full` 사용 시: 시스템 `gcc`/`g++` 10.2 이상 권장 (GCC dump metadata용)
-- `--analysis-mode full`은 선택 의존성 `tree_sitter`, `tree_sitter_c`, `tree_sitter_cpp`가 있으면 구조 분석에 사용하고, 없으면 기존 fast fallback을 사용
+- `--analysis-mode full`은 `requirements.txt`에 포함된 tree-sitter C/C++ 구조 파서를 우선 사용하고, 결과가 없으면 기존 fast fallback을 사용
 - RHEL 8.10에서는 GCC toolchain이 기본 제공되지 않으면 `sudo dnf groupinstall -y "Development Tools"`로 설치할 수 있음
 - 설치/가상환경/검증 명령은 [requirements.md](requirements.md) 참고
 
@@ -118,7 +118,7 @@ python src/cvas_mvp.py model.c -o output.json
 CVAS는 사용자-facing 분석 모드를 `fast`와 `full` 두 가지로 유지합니다.
 
 - `fast`: `pycparser` 기반 경량 분석을 먼저 시도하고, AST 파싱이 실패하면 text fallback으로 최대한 결과를 생성합니다.
-- `full`: 선택적으로 tree-sitter C/C++ 구조 파서를 먼저 사용하고, 설치되어 있지 않거나 결과가 없으면 fast 경로로 fallback한 뒤 GCC dump metadata를 추가합니다. clang/libclang은 필수 요구사항이 아닙니다.
+- `full`: `requirements.txt`에 포함된 tree-sitter C/C++ 구조 파서를 먼저 사용하고, 결과가 없으면 fast 경로로 fallback한 뒤 GCC dump metadata를 추가합니다. clang/libclang은 필수 요구사항이 아닙니다.
 
 ```bash
 python src/cvas_cli.py model.c --analysis-mode fast -o output.json
