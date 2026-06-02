@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import copy
 import subprocess
 import sys
 import tempfile
@@ -63,6 +64,41 @@ def _direct_callees(model: dict, name: str) -> set[str]:
 def _stage_functions(source: str, stage_number: int) -> list[str]:
     pattern = re.compile(r"\bstatic\s+[^;{()]+\s+(bpc_stage%d_[A-Za-z0-9_]+)\s*\(" % stage_number)
     return sorted(set(pattern.findall(source)))
+
+
+def _strip_pipeline_stage_name_hints(model: dict) -> dict:
+    data = copy.deepcopy(model)
+    function_names = sorted(
+        (
+            str(block.get("block_name"))
+            for block in data.get("blocks", [])
+            if re.search(r"(?:^|_)stage\d+(?:_|$)", str(block.get("block_name", "")).lower())
+        ),
+        key=len,
+        reverse=True,
+    )
+    function_map = {name: f"pipe_op_{index:02d}" for index, name in enumerate(function_names, start=1)}
+
+    def replace_text(text: str) -> str:
+        updated = text
+        for old, new in function_map.items():
+            updated = updated.replace(old, new)
+        updated = re.sub(r"\bstage(\d+)\b", r"bundle\1", updated)
+        updated = re.sub(r"\bStage\s+(\d+)\b", r"Bundle \1", updated)
+        return updated
+
+    def transform(value):
+        if isinstance(value, dict):
+            return {replace_text(str(key)): transform(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [transform(item) for item in value]
+        if isinstance(value, str):
+            return replace_text(value)
+        return value
+
+    stripped = transform(data)
+    stripped.get("flow", {}).pop("pipeline_stages", None)
+    return stripped
 
 
 def test_sample_cmodel_has_six_stage_pipeline_contract():
@@ -167,6 +203,56 @@ def test_sample_cmodel_pipeline_stage_layout_groups_stage_lanes_in_parallel():
 
         join_step = next(step for step in stage_steps if "join" in step["function"] or "final" in step["function"])
         assert join_step["lane"] == max(lanes), "join/final helper should sit below the parallel lanes"
+        stage_columns.append(next(iter(columns)))
+
+    assert stage_columns == sorted(stage_columns)
+
+
+def test_sample_cmodel_pipeline_stage_layout_infers_without_stage_name_hints():
+    model = _strip_pipeline_stage_name_hints(_run_cvas(SAMPLE_C))
+    sequence_model = build_sequence_execution_model(model)
+    pipeline_layout = sequence_model["layouts"]["pipeline"]
+    pipeline_steps = pipeline_layout["steps"]
+
+    assert "stage" not in json.dumps(
+        [
+            step["function"]
+            for step in pipeline_steps
+            if step["function"] not in {"simple_bpc_frame", "simple_bpc_pixel"}
+        ]
+    ).lower()
+    assert pipeline_layout["column_labels"][:8] == [
+        "Entry / utility",
+        "Pipeline setup",
+        "Stage 1",
+        "Stage 2",
+        "Stage 3",
+        "Stage 4",
+        "Stage 5",
+        "Stage 6",
+    ]
+
+    steps_by_function = {step["function"]: step for step in pipeline_steps}
+    assert steps_by_function["simple_bpc_frame"]["column"] < steps_by_function["simple_bpc_pixel"]["column"]
+
+    stage_columns: list[int] = []
+    for stage_number in range(1, 7):
+        stage_steps = [
+            step
+            for step in pipeline_steps
+            if step.get("pipeline_stage") == stage_number
+            and step.get("pipeline_stage_source") == "call_dependency"
+        ]
+        assert len(stage_steps) >= 5, f"inferred stage {stage_number} should expose lane/helper cards"
+
+        columns = {step["column"] for step in stage_steps}
+        lanes = {step["lane"] for step in stage_steps}
+        assert len(columns) == 1, f"inferred stage {stage_number} helpers should share one column"
+        assert len(lanes) == len(stage_steps), f"inferred stage {stage_number} helpers should occupy lanes"
+
+        join_steps = [step for step in stage_steps if step.get("pipeline_lane_role") == "join"]
+        assert len(join_steps) == 1, f"inferred stage {stage_number} should have one join/finalizer"
+        assert join_steps[0]["lane"] == max(lanes)
         stage_columns.append(next(iter(columns)))
 
     assert stage_columns == sorted(stage_columns)
