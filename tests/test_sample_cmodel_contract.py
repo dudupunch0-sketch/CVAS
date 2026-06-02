@@ -12,8 +12,14 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
+SRC_DIR = ROOT_DIR / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 from json_to_html import build_sequence_execution_model  # noqa: E402
+from cvas_analysis import AnalysisOptions  # noqa: E402
+from cvas_callgraph import find_function_calls  # noqa: E402
+from cvas_source import find_function_definitions  # noqa: E402
 
 CVAS_PARSER = ROOT_DIR / "src" / "cvas_mvp.py"
 SAMPLE_C = ROOT_DIR / "test_examples.c"
@@ -285,6 +291,42 @@ def test_cpp_syntax_fixture_cvas_full_mode_non_crash():
     assert model["analysis_mode"] == "full"
     assert model["analysis_backend"] == "tree-sitter+pycparser+gcc-dump"
     assert model.get("blocks"), "C++ syntax fixture should discover at least one block"
+
+
+def test_cpp_call_resolution_does_not_guess_member_from_unqualified_suffix():
+    calls, _ = find_function_calls(
+        "return reset();",
+        {"top", "Filter::reset"},
+        caller_name="top",
+    )
+
+    assert calls == []
+
+
+def test_cpp_call_resolution_uses_local_pointer_type_for_member_calls():
+    known = {"top", "Filter::process", "Other::process"}
+    calls, _ = find_function_calls(
+        "Filter *ptr = 0; return ptr->process(1);",
+        known,
+        caller_name="top",
+    )
+
+    assert calls == [("Filter::process", ["1"], None)]
+
+
+def test_cpp_regex_fallback_models_constructors_as_void_blocks():
+    functions = find_function_definitions(
+        CPP_FIXTURE.read_text(encoding="utf-8"),
+        analysis_options=AnalysisOptions(mode="fast", language_override="c++"),
+        source_path=CPP_FIXTURE,
+        merge_fallback=True,
+    )
+    returns_by_name = {name: ret for ret, name, _, _ in functions}
+
+    assert returns_by_name["BaseProcessor::BaseProcessor"] == "void"
+    assert returns_by_name["BaseProcessor::~BaseProcessor"] == "void"
+    assert returns_by_name["DerivedProcessor::DerivedProcessor"] == "void"
+    assert returns_by_name["DerivedProcessor::~DerivedProcessor"] == "void"
 
 
 def test_cpp_syntax_fixture_cvas_full_mode_models_cpp_cmodel():
