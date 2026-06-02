@@ -198,6 +198,14 @@ def _is_function_definition_suffix(segment: str) -> bool:
     return suffix.startswith("->")
 
 
+def _is_cpp_constructor_or_destructor_name(name: str) -> bool:
+    if "::" not in name:
+        return False
+    owner, member_name = name.rsplit("::", 1)
+    class_name = owner.rsplit("::", 1)[-1]
+    return member_name in {class_name, f"~{class_name}"}
+
+
 def _find_class_scopes(source: str) -> List[Tuple[str, int, int]]:
     scopes: List[Tuple[str, int, int]] = []
     class_pattern = re.compile(r"\b(?:class|struct)\s+([A-Za-z_]\w*)[^;{}]*\{")
@@ -284,6 +292,8 @@ def _find_function_definitions_regex(source: str) -> List[Tuple[str, str, str, s
             cleaned.rfind("{", 0, name_start),
         )
         ret = " ".join(cleaned[header_start + 1 : name_start].split())
+        if _is_cpp_constructor_or_destructor_name(name):
+            ret = "void"
         params = cleaned[open_paren + 1 : close_paren].strip()
         body, _ = extract_brace_block(cleaned, brace_index)
         if body is None:

@@ -108,6 +108,14 @@ def _is_function_definition_suffix(segment: str) -> bool:
     return suffix.startswith("->")
 
 
+def _is_cpp_constructor_or_destructor_name(name: str) -> bool:
+    if "::" not in name:
+        return False
+    owner, member_name = name.rsplit("::", 1)
+    class_name = owner.rsplit("::", 1)[-1]
+    return member_name in {class_name, f"~{class_name}"}
+
+
 def _extract_name_before_paren(
     source: str,
     open_paren: int,
@@ -248,10 +256,8 @@ def find_function_definitions_with_tree_sitter(
         if name_index == -1 and "::" in name:
             name_index = header.rfind(name.rsplit("::", 1)[-1])
         ret = " ".join(header[:name_index].split()) if name_index >= 0 else ""
-        if "::" in name:
-            class_name, member_name = name.rsplit("::", 1)
-            if member_name in {class_name, f"~{class_name}"}:
-                ret = "void"
+        if _is_cpp_constructor_or_destructor_name(name):
+            ret = "void"
 
         body_text = _node_text(source_bytes, body_node)
         body, _ = _extract_brace_block(body_text, 0)

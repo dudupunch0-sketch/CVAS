@@ -59,9 +59,10 @@ def _known_cpp_classes(known_functions: set[str]) -> set[str]:
     for function_name in known_functions:
         if "::" not in function_name:
             continue
-        class_name, _ = function_name.split("::", 1)
+        class_name, _ = function_name.rsplit("::", 1)
         if class_name:
             classes.add(class_name)
+            classes.add(class_name.rsplit("::", 1)[-1])
     return classes
 
 
@@ -91,7 +92,7 @@ def _infer_cpp_object_types(
     cleaned = strip_comments_and_strings(body)
     for class_name in sorted(known_classes, key=len, reverse=True):
         pattern = re.compile(
-            rf"\b{re.escape(class_name)}\s+([A-Za-z_]\w*)\s*(?=[(;=])"
+            rf"\b{re.escape(class_name)}\b\s*(?:[*&]\s*)*([A-Za-z_]\w*)\s*(?=[(;=])"
         )
         for match in pattern.finditer(cleaned):
             object_types.setdefault(match.group(1), class_name)
@@ -134,13 +135,6 @@ def _resolve_known_call_name(
         if candidate in known_functions:
             return candidate
 
-    suffix_matches = [
-        candidate
-        for candidate in known_functions
-        if candidate.endswith(f"::{base_name}") or candidate == base_name
-    ]
-    if len(suffix_matches) == 1:
-        return suffix_matches[0]
     return None
 
 
