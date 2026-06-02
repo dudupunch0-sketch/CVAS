@@ -198,8 +198,8 @@ def build_sequence_execution_model(data: dict) -> dict:
     - call: root/caller-left view for human execution-flow intuition.
     - dependency: producer/consumer static dependency progression.
     - pipeline: dependency-constrained pipeline view. Explicit stage metadata
-      or stage-like names can group lanes, but unnamed models fall back to
-      dependency columns.
+      or caller-local call dependencies can group lanes, but unresolved models
+      fall back to dependency columns.
 
     Neither layout claims to be a dynamic runtime/cycle schedule.
     """
@@ -604,6 +604,135 @@ def build_sequence_execution_model(data: dict) -> dict:
         except (TypeError, ValueError):
             return None
 
+    identifier_pattern = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
+
+    def identifiers_in_text(value: object) -> set[str]:
+        return set(identifier_pattern.findall(str(value or "")))
+
+    def assigned_target_identifiers(call_item: dict) -> set[str]:
+        assigned = call_item.get("assigned")
+        if isinstance(assigned, dict):
+            target = assigned.get("target")
+        else:
+            target = assigned
+        return identifiers_in_text(target)
+
+    def argument_identifiers(call_item: dict) -> set[str]:
+        identifiers: set[str] = set()
+        args = call_item.get("args")
+        if not isinstance(args, list):
+            return identifiers
+        for arg in args:
+            if isinstance(arg, dict):
+                identifiers.update(identifiers_in_text(arg.get("expr")))
+            else:
+                identifiers.update(identifiers_in_text(arg))
+        return identifiers
+
+    def infer_pipeline_stages_from_call_dependencies() -> dict[str, dict[str, object]]:
+        """Infer stage-like call batches from caller-local call dataflow.
+
+        A stage is recognized as a caller-local segment that ends with a call
+        consuming all assigned values produced in that segment. This captures
+        the common lane/lane/.../join C-model shape without relying on helper
+        names such as *_stage1_*.
+        """
+
+        calls_by_caller: dict[str, list[tuple[tuple[int, int, str], dict]]] = {}
+        for index, item in enumerate(call_instances):
+            if not isinstance(item, dict):
+                continue
+            caller = item.get("caller_block_id")
+            callee = item.get("callee_block_id")
+            if caller not in step_by_block_id or callee not in step_by_block_id or caller == callee:
+                continue
+            caller_id = str(caller)
+            callee_id = str(callee)
+            ordinal_raw = item.get("ordinal_in_caller")
+            try:
+                ordinal = int(ordinal_raw) if ordinal_raw is not None else index
+            except (TypeError, ValueError):
+                ordinal = index
+            calls_by_caller.setdefault(caller_id, []).append(((ordinal, index, callee_id), item))
+
+        inferred_by_block: dict[str, dict[str, object]] = {}
+        ambiguous_blocks: set[str] = set()
+
+        for caller_id, ordered_items in calls_by_caller.items():
+            if len(ordered_items) < 4:
+                continue
+            ordered_items.sort(key=lambda pair: pair[0])
+
+            segment: list[tuple[str, dict]] = []
+            segment_producers: dict[str, str] = {}
+            inferred_groups: list[tuple[list[str], str]] = []
+
+            for position, (_order_key, item) in enumerate(ordered_items):
+                callee_id = str(item.get("callee_block_id"))
+                arg_ids = argument_identifiers(item)
+                assigned_ids = assigned_target_identifiers(item)
+                consumed_segment_producers = {
+                    segment_producers[identifier]
+                    for identifier in arg_ids
+                    if identifier in segment_producers
+                }
+                required_by_broader_join = set(segment_producers) | assigned_ids
+                has_later_broader_join = False
+                if assigned_ids and len(required_by_broader_join) >= 3:
+                    for _later_order_key, later_item in ordered_items[position + 1:]:
+                        later_assigned_ids = assigned_target_identifiers(later_item)
+                        if not later_assigned_ids:
+                            continue
+                        if required_by_broader_join.issubset(argument_identifiers(later_item)):
+                            has_later_broader_join = True
+                            break
+                consumes_all_segment_outputs = (
+                    bool(assigned_ids)
+                    and len(segment_producers) >= 2
+                    and consumed_segment_producers == set(segment_producers.values())
+                    and not has_later_broader_join
+                )
+
+                if segment and consumes_all_segment_outputs:
+                    group_ids: list[str] = []
+                    for previous_callee_id, _previous_item in segment:
+                        if previous_callee_id not in group_ids:
+                            group_ids.append(previous_callee_id)
+                    if callee_id not in group_ids:
+                        group_ids.append(callee_id)
+                    inferred_groups.append((group_ids, callee_id))
+
+                    segment = []
+                    segment_producers = {}
+                    continue
+
+                segment.append((callee_id, item))
+                for target_id in assigned_ids:
+                    segment_producers[target_id] = callee_id
+
+            if len(inferred_groups) < 2:
+                continue
+
+            for stage_index, (group_ids, join_block_id) in enumerate(inferred_groups, start=1):
+                for callee_id in group_ids:
+                    if callee_id in ambiguous_blocks:
+                        continue
+                    role = "join" if callee_id == join_block_id else "lane"
+                    stage_info = {
+                        "stage": stage_index,
+                        "label": "",
+                        "role": role,
+                        "source": "call_dependency",
+                    }
+                    previous = inferred_by_block.get(callee_id)
+                    if previous and previous.get("stage") != stage_index:
+                        inferred_by_block.pop(callee_id, None)
+                        ambiguous_blocks.add(callee_id)
+                        continue
+                    inferred_by_block[callee_id] = stage_info
+
+        return inferred_by_block
+
     pipeline_stage_by_block: dict[str, dict[str, object]] = {}
     pipeline_stage_by_function: dict[str, dict[str, object]] = {}
     pipeline_stages = _as_sequence_dict(flow.get("pipeline_stages"))
@@ -630,32 +759,18 @@ def build_sequence_execution_model(data: dict) -> dict:
             if function_name not in (None, ""):
                 pipeline_stage_by_function[str(function_name)] = stage_info
 
-    def pipeline_stage_number_from_name(function_name: object) -> int | None:
-        match = re.search(r"(?:^|_)stage(\d+)(?:_|$)", str(function_name or "").lower())
-        if not match:
-            return None
-        try:
-            return int(match.group(1))
-        except ValueError:
-            return None
+    inferred_pipeline_stage_by_block = infer_pipeline_stages_from_call_dependencies()
 
     def pipeline_stage_info(step: dict) -> dict[str, object] | None:
         block_id = step.get("block_id")
         if block_id is not None and str(block_id) in pipeline_stage_by_block:
             return pipeline_stage_by_block[str(block_id)]
+        if block_id is not None and str(block_id) in inferred_pipeline_stage_by_block:
+            return inferred_pipeline_stage_by_block[str(block_id)]
         function_name = str(step.get("function") or "")
         if function_name in pipeline_stage_by_function:
             return pipeline_stage_by_function[function_name]
-        stage_number = pipeline_stage_number_from_name(function_name)
-        if stage_number is None:
-            return None
-        lane_role = "join" if "join" in function_name.lower() or "final" in function_name.lower() else "lane"
-        return {
-            "stage": stage_number,
-            "label": "",
-            "role": lane_role,
-            "source": "name_heuristic",
-        }
+        return None
 
     def pipeline_lane_sort_key(step: dict) -> tuple[int, int, str]:
         function_name = str(step.get("function") or "").lower()
