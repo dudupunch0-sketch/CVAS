@@ -162,6 +162,8 @@ python cvas_wrapper.py test_examples.c docs/test_examples_output_full.html \
   --cvas-args --analysis-mode full
 ```
 
+기존 checked-in output을 보존하면서 갱신해야 할 때는 `docs/maintenance.md`의 백업/재생성 절차를 따릅니다.
+
 프로젝트 소개용 정적 개요 문서는 `docs/cvas_project_overview.html`에 있습니다.
 
 ### Sequence 탭 (v3 timeline card UI) + `function_io.json`
@@ -315,15 +317,19 @@ python src/cvas_mvp.py model.c --cycle-config cycle.json -o output.json
 - `cvas_wrapper.py`: 분석부터 HTML 생성까지 실행하는 래퍼 스크립트 (출력 폴더에 ELK 자산 자동 복사)
 - `json_to_html.py`: CVAS JSON을 단일 HTML로 변환 (Diagram/Sequence 탭, IO 상태 표시, 드래그/줌 포함)
 - `tools/generate_function_io.py`: `function_io.json` 생성기 (규칙 기반 + LLM 하이브리드)
-- `function_io.json`: Sequence 탭 reads/writes summary 및 의존성 판단용 함수 IO 메타데이터
+- `function_io.json`: 생성 가능한 optional sidecar. Sequence 탭 reads/writes summary 및 의존성 판단용 함수 IO 메타데이터
+- `docs/README.md`: docs 디렉터리의 문서 지도
+- `docs/maintenance.md`: checked-in sample output 갱신, 백업, 검증 절차
 - `docs/cvas_datapath_pipeline_design.md`: datapath 중심 II=1 파이프라인 분석 설계 문서
+- `docs/full_mode_cpp_design.md`: `fast`/`full` 분석 모드와 C/C++ full-mode 지원 경계
 - `docs/schema/cvas.schema.v3.json`: Schema v3 formal JSON Schema
 - `docs/schema/cvas-schema-v3.md`: Schema v3 field contract 설명
 - `docs/cvas_project_overview.html`: 프로젝트 소개 / 구조 / 사용 흐름 / 명령어 요약 HTML
 - `docs/test_examples_output_fast.html` / `.json`: `test_examples.c` 기준 fast-mode 샘플 뷰어/JSON
 - `docs/test_examples_output_full.html` / `.json`: `test_examples.c` 기준 full-mode 샘플 뷰어/JSON
+- `docs/backup/`: 이전 checked-in sample output 백업
 - `viewer/`: 오프라인 HTML 뷰어 및 ELK.js 번들 자산
-- `fixtures/`: 파싱 회귀 테스트용 C 코드 모음
+- `tests/fixtures/`: 파싱 회귀 테스트용 C/C++ 코드 모음
 
 ---
 
@@ -1265,12 +1271,16 @@ Current performance depends on input size, analysis mode, and parser backend. Th
 
 - ✅ **README.md**: Main user-facing guide and examples
 - ✅ **requirements.md**: Environment setup, dependencies, and verification commands
+- ✅ **docs/README.md**: Documentation map and generated-output index
+- ✅ **docs/maintenance.md**: Sample output refresh, backup, and verification workflow
 - ✅ **docs/full_mode_cpp_design.md**: Current `fast`/`full` backend contract and hardening checklist
-- ✅ **docs/plans/2026-05-04-analysis-backend-shift.md**: Implementation plan/history for the clang-to-GCC-dump backend shift
 - ✅ **docs/cvas_datapath_pipeline_design.md**: live schema v3 datapath and pipeline contract
 - ✅ **docs/schema/cvas.schema.v3.json**: formal JSON Schema v3 document
 - ✅ **docs/schema/cvas-schema-v3.md**: field-level schema v3 notes
 - ✅ **docs/test_examples_output_fast.json/html** and **docs/test_examples_output_full.json/html**: regenerated fast/full sample artifacts
+- ✅ **docs/backup/**: previous generated sample outputs kept for comparison when outputs are refreshed
+
+Historical implementation notes live under `docs/plans/`.
 
 ### Examples
 

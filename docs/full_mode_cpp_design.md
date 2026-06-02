@@ -222,6 +222,9 @@ Implemented hardening items:
 5. GNU asm normalization covers common `asm volatile`, inline `__asm__`, and `__asm__ __volatile__` statement forms.
 6. Early-return JSON includes `analysis_mode`, `analysis_backend`, and full-mode `gcc_dump` metadata.
 7. Neutral CLI aliases `--compile-arg` and `--compile-db` are available while legacy names remain supported.
+8. Ordinary C++ cmodel fixtures cover qualified class/member definitions, constructors/destructors, `const` methods, references, pointer-to-array parameters, simple template calls, and multi-file project indexing.
+9. C++ member-call resolution avoids suffix-only guesses for unrelated unqualified calls and uses local/parameter object types for `object.method()` and `ptr->method()` where static type context is available.
+10. Regex and tree-sitter discovery normalize constructor/destructor return metadata to `void`, so generated blocks do not expose fake return outputs.
 
 Remaining external validation:
 

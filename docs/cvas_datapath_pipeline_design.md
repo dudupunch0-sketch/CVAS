@@ -239,8 +239,9 @@ The current CLI is batch-oriented and file-oriented:
 - optional project indexing (`--project-root`, `--entry-file`,
   `--source-extensions`)
 - optional analysis mode selection (`--analysis-mode fast|full`)
-- optional clang configuration in full mode (`--clang-arg`, `--language`,
-  `--clang-compile-db`)
+- optional compile configuration in full mode (`--compile-arg`, `--compile-db`,
+  `--language`; legacy `--clang-arg` and `--clang-compile-db` aliases remain
+  accepted)
 - optional `function_io.json` import (`--function-io`)
 
 `src/cvas_cli.py` is the direct JSON-producing entrypoint. `src/cvas_mvp.py` is
