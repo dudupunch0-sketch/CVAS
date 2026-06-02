@@ -161,36 +161,123 @@ def _extract_name_before_paren(
         name = name_match.group(0)
         name_start = open_idx + name_match.start()
         return name, name_start
-    name_match = re.search(r"[A-Za-z_]\w*$", source[: idx + 1])
+    name_match = re.search(
+        r"((?:[A-Za-z_]\w*\s*::\s*)*(?:~\s*)?[A-Za-z_]\w*)\s*$",
+        source[: idx + 1],
+    )
     if not name_match:
         return None
-    name = name_match.group(0)
-    name_start = name_match.start()
+    name = re.sub(r"\s*::\s*", "::", name_match.group(1).strip())
+    name = re.sub(r"~\s+", "~", name)
+    name_start = name_match.start(1)
     return name, name_start
+
+
+def _contains_standalone_colon(segment: str) -> bool:
+    for idx, char in enumerate(segment):
+        if char != ":":
+            continue
+        prev_char = segment[idx - 1] if idx > 0 else ""
+        next_char = segment[idx + 1] if idx + 1 < len(segment) else ""
+        if prev_char != ":" and next_char != ":":
+            return True
+    return False
+
+
+def _is_function_definition_suffix(segment: str) -> bool:
+    suffix = " ".join(segment.strip().split())
+    if not suffix:
+        return True
+    if suffix.startswith(":"):
+        return ";" not in suffix
+    suffix = re.sub(r"\b(?:const|volatile|noexcept|override|final)\b", " ", suffix)
+    suffix = suffix.replace("&", " ")
+    suffix = suffix.strip()
+    if not suffix:
+        return True
+    return suffix.startswith("->")
+
+
+def _find_class_scopes(source: str) -> List[Tuple[str, int, int]]:
+    scopes: List[Tuple[str, int, int]] = []
+    class_pattern = re.compile(r"\b(?:class|struct)\s+([A-Za-z_]\w*)[^;{}]*\{")
+    for match in class_pattern.finditer(source):
+        brace_index = source.rfind("{", match.start(), match.end())
+        if brace_index == -1:
+            continue
+        _, end_index = extract_brace_block(source, brace_index)
+        if end_index == brace_index:
+            continue
+        scopes.append((match.group(1), brace_index, end_index))
+    return scopes
+
+
+def _class_scope_for_index(
+    scopes: List[Tuple[str, int, int]],
+    index: int,
+) -> Optional[str]:
+    matching = [
+        (start, name)
+        for name, start, end in scopes
+        if start < index < end
+    ]
+    if not matching:
+        return None
+    return max(matching)[1]
+
+
+def _find_signature_before_brace(
+    source: str,
+    brace_index: int,
+) -> Optional[Tuple[str, int, int, int]]:
+    search_end = brace_index
+    while search_end > 0:
+        close_paren = source.rfind(")", 0, search_end)
+        if close_paren == -1:
+            return None
+        open_paren = _find_matching_paren(source, close_paren)
+        if open_paren is None:
+            search_end = close_paren
+            continue
+        name_info = _extract_name_before_paren(source, open_paren)
+        if not name_info:
+            search_end = open_paren
+            continue
+
+        name, name_start = name_info
+        header_start = max(
+            source.rfind(";", 0, name_start),
+            source.rfind("}", 0, name_start),
+            source.rfind("{", 0, name_start),
+        )
+        if _contains_standalone_colon(source[header_start + 1 : name_start]):
+            search_end = open_paren
+            continue
+
+        suffix = _strip_attributes_between(source, close_paren + 1, brace_index)
+        if _is_function_definition_suffix(suffix):
+            return name, name_start, open_paren, close_paren
+        search_end = open_paren
+    return None
 
 
 def _find_function_definitions_regex(source: str) -> List[Tuple[str, str, str, str]]:
     functions = []
     cleaned = strip_comments_and_strings(source)
+    class_scopes = _find_class_scopes(cleaned)
 
     for brace_index, char in enumerate(cleaned):
         if char != "{":
             continue
-        close_paren = cleaned.rfind(")", 0, brace_index)
-        if close_paren == -1:
+        signature = _find_signature_before_brace(cleaned, brace_index)
+        if signature is None:
             continue
-        between = _strip_attributes_between(cleaned, close_paren + 1, brace_index)
-        if between.strip():
-            continue
-        open_paren = _find_matching_paren(cleaned, close_paren)
-        if open_paren is None:
-            continue
-        name_info = _extract_name_before_paren(cleaned, open_paren)
-        if not name_info:
-            continue
-        name, name_start = name_info
+        name, name_start, open_paren, close_paren = signature
         if name in KEYWORDS:
             continue
+        class_scope = _class_scope_for_index(class_scopes, name_start)
+        if class_scope and "::" not in name:
+            name = f"{class_scope}::{name}"
         header_start = max(
             cleaned.rfind(";", 0, name_start),
             cleaned.rfind("}", 0, name_start),

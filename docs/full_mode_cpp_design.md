@@ -21,6 +21,7 @@ The current full-mode design intentionally does not build:
 - clang/libclang as a required runtime dependency
 - linker-aware or whole-build semantic analysis
 - guaranteed support for template-heavy C++ semantics
+- HLS/SystemC-specific semantic modeling
 - hard-failure behavior for ordinary compiler diagnostics
 - a third public analysis mode such as `tolerant`
 
@@ -66,6 +67,19 @@ pip install tree_sitter tree_sitter_c tree_sitter_cpp
 ```
 
 If they are absent, CVAS still runs full mode through the fast fallback path and records GCC dump metadata when GCC/G++ is available.
+
+For ordinary C++ cmodel fixtures, the maintained fallback contract is stronger than
+non-crash behavior. CVAS should represent qualified class/member definitions,
+constructors/destructors, `const` methods, references, pointer-to-array
+parameters, direct calls, simple template calls, and member calls such as
+`object.method()` / `ptr->method()` as readable blocks, call edges, and
+Sequence-view facts.
+
+Project mode extends that contract across indexed `.cpp`/`.hpp` files under
+`--project-root`: the entry file supplies the `CVAS_START`/`CVAS_END` seed region,
+while included headers and sibling implementation files can supply reachable
+helper/template/member definitions. This is a static visualization contract, not
+full C++ overload resolution, virtual-dispatch, linker, or build-system semantics.
 
 ## GCC Dump Metadata
 
