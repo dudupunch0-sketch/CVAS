@@ -696,6 +696,8 @@ def analyze_function(
         known_functions,
         analysis_options=analysis_options,
         source_path=Path(source_file),
+        caller_name=name,
+        params=params,
     )
 
     return FunctionAnalysisResult(

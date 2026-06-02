@@ -18,6 +18,9 @@ from json_to_html import build_sequence_execution_model  # noqa: E402
 CVAS_PARSER = ROOT_DIR / "src" / "cvas_mvp.py"
 SAMPLE_C = ROOT_DIR / "test_examples.c"
 CPP_FIXTURE = ROOT_DIR / "tests" / "fixtures" / "syntax" / "cpp_syntax_coverage.cpp"
+CPP_PROJECT_ROOT = ROOT_DIR / "tests" / "fixtures" / "cpp_project"
+CPP_PROJECT_ENTRY = CPP_PROJECT_ROOT / "src" / "bpc_project_pipeline.cpp"
+CPP_PROJECT_INCLUDE = CPP_PROJECT_ROOT / "include"
 FULL_SAMPLE_JSON = ROOT_DIR / "docs" / "test_examples_output_full.json"
 
 
@@ -282,3 +285,151 @@ def test_cpp_syntax_fixture_cvas_full_mode_non_crash():
     assert model["analysis_mode"] == "full"
     assert model["analysis_backend"] == "tree-sitter+pycparser+gcc-dump"
     assert model.get("blocks"), "C++ syntax fixture should discover at least one block"
+
+
+def test_cpp_syntax_fixture_cvas_full_mode_models_cpp_cmodel():
+    model = _run_cvas(CPP_FIXTURE, "--analysis-mode", "full", "--language", "c++")
+    names = _function_names(model)
+
+    required_blocks = {
+        "clamp_value",
+        "BaseProcessor::BaseProcessor",
+        "BaseProcessor::~BaseProcessor",
+        "BaseProcessor::label",
+        "BaseProcessor::scale_value",
+        "DerivedProcessor::DerivedProcessor",
+        "DerivedProcessor::~DerivedProcessor",
+        "DerivedProcessor::process",
+        "DerivedProcessor::label",
+        "DerivedProcessor::adjust",
+        "select_processor_label",
+        "sum_row_array",
+        "sum_grid_array",
+        "allocate_line",
+        "release_line",
+        "allocate_cube",
+        "release_cube",
+        "run_cpp_syntax_fixture",
+    }
+    assert required_blocks.issubset(names)
+    assert names.isdisjoint({"name_", "process", "label", "adjust", "BaseProcessor", "DerivedProcessor"})
+
+    blocks_by_name = {block["block_name"]: block for block in model["blocks"]}
+    assert blocks_by_name["DerivedProcessor::adjust"]["inputs"] == [
+        "mutable_ref",
+        "readonly_ref",
+        "tag",
+    ]
+    assert blocks_by_name["sum_row_array"]["inputs"] == ["row", "count"]
+    assert blocks_by_name["sum_grid_array"]["inputs"] == ["grid"]
+
+    assert {
+        "sum_row_array",
+        "sum_grid_array",
+        "DerivedProcessor::process",
+        "allocate_line",
+        "allocate_cube",
+        "release_cube",
+        "release_line",
+        "clamp_value",
+    }.issubset(_direct_callees(model, "run_cpp_syntax_fixture"))
+    assert "DerivedProcessor::adjust" in _direct_callees(model, "DerivedProcessor::process")
+    assert "BaseProcessor::scale_value" in _direct_callees(model, "DerivedProcessor::adjust")
+    assert "BaseProcessor::label" in _direct_callees(model, "select_processor_label")
+
+    sequence_model = build_sequence_execution_model(model)
+    sequence_text = json.dumps(sequence_model)
+    for name in required_blocks:
+        assert name in sequence_text
+
+
+def test_cpp_project_fixture_compiles_syntax_only():
+    result = subprocess.run(
+        [
+            "g++",
+            "-std=c++11",
+            f"-I{CPP_PROJECT_INCLUDE}",
+            "-DCVAS_START=",
+            "-DCVAS_END=",
+            "-fsyntax-only",
+            str(CPP_PROJECT_ROOT / "src" / "bpc_project_math.cpp"),
+            str(CPP_PROJECT_ROOT / "src" / "bpc_project_processor.cpp"),
+            str(CPP_PROJECT_ENTRY),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_cpp_project_fixture_cvas_project_mode_models_included_cmodel():
+    model = _run_cvas(
+        CPP_PROJECT_ENTRY,
+        "--analysis-mode",
+        "full",
+        "--language",
+        "c++",
+        "--project-root",
+        str(CPP_PROJECT_ROOT),
+        "--source-extensions",
+        "cpp,hpp",
+        f"--compile-arg=-I{CPP_PROJECT_INCLUDE}",
+    )
+    names = _function_names(model)
+
+    required_blocks = {
+        "run_project_bpc_frame",
+        "project_sum_row_array",
+        "project_sum_grid_array",
+        "project_select_processor_label",
+        "BpcProjectDerivedProcessor::process",
+        "BpcProjectDerivedProcessor::adjust",
+        "BpcProjectBaseProcessor::scale_value",
+        "BpcProjectBaseProcessor::label",
+        "project_allocate_line",
+        "project_allocate_cube",
+        "project_load_window",
+        "project_load_pixel",
+        "project_release_cube",
+        "project_release_line",
+        "project_clamp_value",
+    }
+    assert required_blocks.issubset(names)
+    assert names.isdisjoint({"name_", "process", "label", "adjust"})
+    assert model["project_mode"] is True
+    assert model["gcc_dump"]["status"] == "ok"
+
+    blocks_by_name = {block["block_name"]: block for block in model["blocks"]}
+    assert blocks_by_name["project_sum_row_array"]["inputs"] == ["row", "count"]
+    assert blocks_by_name["project_sum_grid_array"]["inputs"] == ["grid"]
+    assert blocks_by_name["BpcProjectDerivedProcessor::adjust"]["inputs"] == [
+        "mutable_ref",
+        "readonly_ref",
+        "tag",
+    ]
+    assert blocks_by_name["project_load_window"]["inputs"] == ["raw", "coord"]
+
+    run_callees = _direct_callees(model, "run_project_bpc_frame")
+    assert {
+        "project_sum_row_array",
+        "project_sum_grid_array",
+        "project_select_processor_label",
+        "BpcProjectDerivedProcessor::process",
+        "project_allocate_line",
+        "project_allocate_cube",
+        "project_load_window",
+        "project_release_cube",
+        "project_release_line",
+        "project_clamp_value",
+    }.issubset(run_callees)
+    assert "BpcProjectBaseProcessor::label" in _direct_callees(model, "project_select_processor_label")
+    assert "BpcProjectDerivedProcessor::adjust" in _direct_callees(model, "BpcProjectDerivedProcessor::process")
+    assert "BpcProjectBaseProcessor::scale_value" in _direct_callees(model, "BpcProjectDerivedProcessor::adjust")
+    assert "project_load_pixel" in _direct_callees(model, "project_load_window")
+    assert "project_clamp_value" in _direct_callees(model, "project_load_pixel")
+
+    sequence_model = build_sequence_execution_model(model)
+    sequence_text = json.dumps(sequence_model)
+    for name in required_blocks:
+        assert name in sequence_text

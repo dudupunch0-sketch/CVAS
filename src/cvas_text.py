@@ -63,6 +63,30 @@ def extract_identifier_tokens(body: str) -> List[str]:
     return re.findall(r"\b[A-Za-z_]\w*\b", cleaned)
 
 
+def param_name_from_spec(spec: str) -> Optional[str]:
+    """Extract a readable parameter name from C/C++ declaration text."""
+    compact = " ".join(spec.strip().split())
+    if not compact or compact == "void":
+        return None
+
+    default_index = compact.find("=")
+    if default_index != -1:
+        compact = compact[:default_index].strip()
+
+    pointer_array = re.search(r"\(\s*[*&]+\s*([A-Za-z_]\w*)\s*\)", compact)
+    if pointer_array:
+        return pointer_array.group(1)
+
+    without_arrays = re.sub(r"\[[^\]]*\]", " ", compact).strip()
+    match = re.search(r"(?:[*&]\s*)?([A-Za-z_]\w*)\s*$", without_arrays)
+    if not match:
+        return None
+    name = match.group(1)
+    if name in TYPE_AND_C_KEYWORDS:
+        return None
+    return name
+
+
 def parse_params(params: str) -> List[str]:
     """Extract parameter names from function signature."""
     params = params.strip()
@@ -75,9 +99,9 @@ def parse_params(params: str) -> List[str]:
         if not param:
             continue
 
-        tokens = param.split()
-        name = tokens[-1].replace("*", "").strip()
-        result.append(name)
+        name = param_name_from_spec(param)
+        if name:
+            result.append(name)
 
     return result
 
