@@ -197,8 +197,9 @@ def build_sequence_execution_model(data: dict) -> dict:
     exposes three layouts over the same steps/edges:
     - call: root/caller-left view for human execution-flow intuition.
     - dependency: producer/consumer static dependency progression.
-    - pipeline: stage-number columns for C-models that encode pipeline stages
-      in function names such as bpc_stage1_lane().
+    - pipeline: dependency-constrained pipeline view. Explicit stage metadata
+      or stage-like names can group lanes, but unnamed models fall back to
+      dependency columns.
 
     Neither layout claims to be a dynamic runtime/cycle schedule.
     """
@@ -220,7 +221,7 @@ def build_sequence_execution_model(data: dict) -> dict:
             "id": "pipeline",
             "label": "Pipeline stage order",
             "order_kind": "pipeline_stage_layout",
-            "description": "Pipeline stage layout: stage-named helpers share a stage column and expand into parallel lanes; join/final helpers sit below their stage lanes.",
+            "description": "Pipeline stage layout: dependency-constrained blocks are placed left-to-right; explicit or inferred stage groups can share a column with parallel lanes.",
         },
     ]
     empty_model = {
@@ -681,49 +682,131 @@ def build_sequence_execution_model(data: dict) -> dict:
         label = str(info.get("label") or "")
         if stage_number is not None and label and stage_number not in stage_label_by_number:
             stage_label_by_number[stage_number] = label
-    pipeline_column_by_stage = {stage_number: index + 1 for index, stage_number in enumerate(stage_numbers)}
     pipeline_column_by_block: dict[str, int] = {}
     pipeline_lane_by_block: dict[str, int] = {}
 
-    non_stage_steps = [step for step in steps_raw if pipeline_stage_info(step) is None]
-    for lane, step in enumerate(non_stage_steps):
-        block_id = str(step.get("block_id"))
-        pipeline_column_by_block[block_id] = 0
-        pipeline_lane_by_block[block_id] = lane
-
-    for stage_number in stage_numbers:
-        stage_steps = [
-            step
-            for step in steps_raw
-            if (pipeline_stage_info(step) or {}).get("stage") == stage_number
+    if not stage_numbers:
+        pipeline_column_by_block = dict(dependency_column_by_block)
+        pipeline_layout = apply_layout(pipeline_column_by_block, dependency_critical_blocks)
+        pipeline_layout["lanes"] = max((step["lane"] for step in pipeline_layout["steps"]), default=-1) + 1
+        pipeline_layout["order_kind"] = "pipeline_stage_layout"
+        pipeline_layout["column_labels"] = [
+            f"P{index}" for index in range(pipeline_layout["columns"])
         ]
-        for lane, step in enumerate(sorted(stage_steps, key=pipeline_lane_sort_key)):
-            block_id = str(step.get("block_id"))
-            pipeline_column_by_block[block_id] = pipeline_column_by_stage[stage_number]
-            pipeline_lane_by_block[block_id] = lane
+    else:
+        stage_block_ids = {
+            str(step.get("block_id"))
+            for step in steps_raw
+            if step.get("block_id") is not None and pipeline_stage_info(step) is not None
+        }
+        reaches_stage_cache: dict[str, bool] = {}
 
-    pipeline_layout = apply_layout(pipeline_column_by_block, dependency_critical_blocks)
-    for step in pipeline_layout["steps"]:
-        lane = pipeline_lane_by_block.get(step["block_id"])
-        if lane is not None:
-            step["lane"] = lane
-        source_step = step_by_block_id.get(step["block_id"])
-        if source_step:
-            info = pipeline_stage_info(source_step)
-            if info:
-                step["pipeline_stage"] = info.get("stage")
-                step["pipeline_stage_source"] = info.get("source")
-                step["pipeline_lane_role"] = info.get("role")
-                if info.get("label"):
-                    step["pipeline_stage_label"] = info.get("label")
-    pipeline_layout["lanes"] = max((step["lane"] for step in pipeline_layout["steps"]), default=-1) + 1
-    pipeline_layout["order_kind"] = "pipeline_stage_layout"
-    pipeline_layout["column_labels"] = ["Entry / utility"] + [
-        f"Stage {stage_number}: {stage_label_by_number[stage_number]}"
-        if stage_label_by_number.get(stage_number)
-        else f"Stage {stage_number}"
-        for stage_number in stage_numbers
-    ]
+        def reaches_stage(block_id: str, active: set[str]) -> bool:
+            if block_id in reaches_stage_cache:
+                return reaches_stage_cache[block_id]
+            if block_id in stage_block_ids:
+                reaches_stage_cache[block_id] = True
+                return True
+            if block_id in active:
+                return False
+            active.add(block_id)
+            result = any(reaches_stage(child, active) for child in call_children.get(block_id, []))
+            active.remove(block_id)
+            reaches_stage_cache[block_id] = result
+            return result
+
+        stage_ancestor_blocks = {
+            block_id
+            for block_id in step_block_ids
+            if block_id not in stage_block_ids and reaches_stage(block_id, set())
+        }
+        stage_ancestor_incoming = {
+            child
+            for parent in stage_ancestor_blocks
+            for child in order_call_children(parent)
+            if child in stage_ancestor_blocks
+        }
+        stage_ancestor_roots = [
+            block_id for block_id in roots if block_id in stage_ancestor_blocks
+        ]
+        stage_ancestor_roots.extend(
+            block_id
+            for block_id in order_block_ids(list(stage_ancestor_blocks))
+            if block_id not in stage_ancestor_incoming and block_id not in stage_ancestor_roots
+        )
+        if not stage_ancestor_roots:
+            stage_ancestor_roots = order_block_ids(list(stage_ancestor_blocks))
+
+        def assign_stage_ancestor_columns(block_id: str, column: int, active: set[str]) -> None:
+            existing_column = pipeline_column_by_block.get(block_id)
+            if existing_column is not None and existing_column <= column:
+                return
+            pipeline_column_by_block[block_id] = column
+            if block_id in active:
+                return
+            active.add(block_id)
+            for child in order_call_children(block_id):
+                if child in stage_ancestor_blocks:
+                    assign_stage_ancestor_columns(child, column + 1, active)
+            active.remove(block_id)
+
+        for root in stage_ancestor_roots:
+            assign_stage_ancestor_columns(root, 0, set())
+
+        for block_id in stage_ancestor_blocks:
+            pipeline_column_by_block.setdefault(block_id, 0)
+
+        stage_start_column = max(
+            (pipeline_column_by_block[block_id] for block_id in stage_ancestor_blocks),
+            default=0,
+        ) + 1
+        pipeline_column_by_stage = {
+            stage_number: stage_start_column + index
+            for index, stage_number in enumerate(stage_numbers)
+        }
+
+        for step in steps_raw:
+            block_id = str(step.get("block_id"))
+            if pipeline_stage_info(step) is None and block_id not in pipeline_column_by_block:
+                pipeline_column_by_block[block_id] = 0
+
+        for stage_number in stage_numbers:
+            stage_steps = [
+                step
+                for step in steps_raw
+                if (pipeline_stage_info(step) or {}).get("stage") == stage_number
+            ]
+            for lane, step in enumerate(sorted(stage_steps, key=pipeline_lane_sort_key)):
+                block_id = str(step.get("block_id"))
+                pipeline_column_by_block[block_id] = pipeline_column_by_stage[stage_number]
+                pipeline_lane_by_block[block_id] = lane
+
+        pipeline_layout = apply_layout(pipeline_column_by_block, dependency_critical_blocks)
+        for step in pipeline_layout["steps"]:
+            lane = pipeline_lane_by_block.get(step["block_id"])
+            if lane is not None:
+                step["lane"] = lane
+            source_step = step_by_block_id.get(step["block_id"])
+            if source_step:
+                info = pipeline_stage_info(source_step)
+                if info:
+                    step["pipeline_stage"] = info.get("stage")
+                    step["pipeline_stage_source"] = info.get("source")
+                    step["pipeline_lane_role"] = info.get("role")
+                    if info.get("label"):
+                        step["pipeline_stage_label"] = info.get("label")
+        pipeline_layout["lanes"] = max((step["lane"] for step in pipeline_layout["steps"]), default=-1) + 1
+        pipeline_layout["order_kind"] = "pipeline_stage_layout"
+        prefix_labels = ["Entry / utility"] + [
+            "Pipeline setup" if index == 1 else f"Pipeline setup {index}"
+            for index in range(1, stage_start_column)
+        ]
+        pipeline_layout["column_labels"] = prefix_labels + [
+            f"Stage {stage_number}: {stage_label_by_number[stage_number]}"
+            if stage_label_by_number.get(stage_number)
+            else f"Stage {stage_number}"
+            for stage_number in stage_numbers
+        ]
 
     return {
         "schema": "sequence-execution-diagram-v2",
@@ -1967,6 +2050,24 @@ def build_html(data: dict) -> str:
     renderSequence(state);
   }}
 
+  function applyInitialViewerRouteParams(state) {{
+    const params = new URLSearchParams(window.location.search || "");
+    const tabParam = (params.get("tab") || params.get("view") || "").toLowerCase();
+    if (tabParam === "sequence") {{
+      state.activeTab = "sequence";
+    }} else if (tabParam === "diagram") {{
+      state.activeTab = "diagram";
+    }}
+
+    const requestedOrder = params.get("sequence_order_mode")
+      || params.get("sequenceOrderMode")
+      || params.get("order");
+    if (requestedOrder && getSequenceOrderModeIds().includes(requestedOrder)) {{
+      state.sequenceOrderMode = requestedOrder;
+      getSequenceBlockMapForMode(state, requestedOrder);
+    }}
+  }}
+
   function resetSequenceCardsOnly(state) {{
     const mode = getSequenceOrderMode(state);
     if (!state.sequenceBlockMapsByMode || typeof state.sequenceBlockMapsByMode !== "object") state.sequenceBlockMapsByMode = {{}};
@@ -2353,6 +2454,7 @@ def build_html(data: dict) -> str:
       }}
     }});
 
+    setTab(state.activeTab === "sequence" ? "sequence" : "diagram");
     rerender();
   }}
 
@@ -2394,6 +2496,7 @@ def build_html(data: dict) -> str:
     state.elkOptions = elkOptions;
     state.functionIO = (DEFAULT_FUNCTION_IO && typeof DEFAULT_FUNCTION_IO === "object") ? DEFAULT_FUNCTION_IO : {{}};
     state.functionIOSource = Object.keys(state.functionIO).length ? "embedded" : "none";
+    applyInitialViewerRouteParams(state);
     updateIOSourceStatus(state);
     applyDetailsPanelState(state);
     renderAnalysisSummary(state);
@@ -2811,7 +2914,7 @@ def build_html(data: dict) -> str:
     if (orderMode === "dependency") {{
       banner.textContent = `Schema ${{schemaVersion}} Sequence · Dependency order: static dependency/data producers flow left-to-right where facts allow; dashed arrows show ${{metaKind}}, not a runtime trace.`;
     }} else if (orderMode === "pipeline") {{
-      banner.textContent = `Schema ${{schemaVersion}} Sequence · Pipeline stage order: stage-named helpers share a stage column and expand into parallel lanes; data arrows retain true direction.`;
+      banner.textContent = `Schema ${{schemaVersion}} Sequence · Pipeline stage order: dependency-constrained blocks flow left-to-right; stage groups, when known, share columns with parallel lanes.`;
     }} else {{
       banner.textContent = `Schema ${{schemaVersion}} Sequence · Call order: root/caller blocks start on the left; caller-local call sequence expands right; data arrows retain true direction and may point backward.`;
     }}

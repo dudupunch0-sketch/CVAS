@@ -401,13 +401,19 @@ def test_sequence_execution_model_defaults_to_call_order_root_left() -> None:
 def test_sequence_execution_model_layers_independent_blocks() -> None:
     model = build_sequence_execution_model(minimal_v3_parallel_model())
     dependency_layout = model["layouts"]["dependency"]
+    pipeline_layout = model["layouts"]["pipeline"]
     steps = {step["block_id"]: step for step in dependency_layout["steps"]}
+    pipeline_steps = {step["block_id"]: step for step in pipeline_layout["steps"]}
 
     assert steps["B1"]["column"] == steps["B2"]["column"]
     assert steps["B1"]["lane"] != steps["B2"]["lane"]
     assert steps["B3"]["column"] > steps["B1"]["column"]
     assert steps["B4"]["column"] > steps["B3"]["column"]
     assert any(step["is_critical"] for step in dependency_layout["steps"])
+    assert pipeline_layout["column_labels"] == ["P0", "P1", "P2"]
+    assert pipeline_steps["B1"]["column"] == pipeline_steps["B2"]["column"]
+    assert pipeline_steps["B3"]["column"] > pipeline_steps["B1"]["column"]
+    assert pipeline_steps["B4"]["column"] > pipeline_steps["B3"]["column"]
 
 
 def test_sequence_execution_model_exposes_layout_mode_metadata() -> None:
@@ -423,7 +429,7 @@ def test_sequence_execution_model_exposes_layout_mode_metadata() -> None:
     assert "dependency" in modes["dependency"]["description"].lower()
     assert modes["pipeline"]["label"] == "Pipeline stage order"
     assert modes["pipeline"]["order_kind"] == "pipeline_stage_layout"
-    assert "stage" in modes["pipeline"]["description"].lower()
+    assert "dependency" in modes["pipeline"]["description"].lower()
 
 
 def test_sequence_execution_model_prefers_explicit_pipeline_stage_metadata() -> None:
@@ -615,6 +621,20 @@ def test_viewer_exposes_sequence_import_export_e2e_dom_hooks() -> None:
     assert "cvas-test-export-map" in html
     assert "cvas-test-import-map" in html
     assert "const rawPayload = input.value || output.value" in html
+
+
+def test_viewer_route_params_can_open_sequence_pipeline_order_for_e2e() -> None:
+    html = build_html(minimal_v3_parallel_model())
+
+    assert "applyInitialViewerRouteParams" in html
+    assert 'params.get("tab")' in html
+    assert 'params.get("view")' in html
+    assert 'state.activeTab = "sequence"' in html
+    assert 'params.get("sequence_order_mode")' in html
+    assert 'params.get("sequenceOrderMode")' in html
+    assert 'params.get("order")' in html
+    assert "getSequenceOrderModeIds().includes(requestedOrder)" in html
+    assert 'setTab(state.activeTab === "sequence" ? "sequence" : "diagram")' in html
 
 
 def test_viewer_sequence_map_exports_edge_density_and_stage_filter_state() -> None:

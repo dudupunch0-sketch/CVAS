@@ -135,8 +135,9 @@ def test_sample_cmodel_pipeline_stage_layout_groups_stage_lanes_in_parallel():
     pipeline_steps = pipeline_layout["steps"]
 
     assert pipeline_layout["order_kind"] == "pipeline_stage_layout"
-    assert pipeline_layout["column_labels"][:7] == [
+    assert pipeline_layout["column_labels"][:8] == [
         "Entry / utility",
+        "Pipeline setup",
         "Stage 1",
         "Stage 2",
         "Stage 3",
@@ -145,6 +146,10 @@ def test_sample_cmodel_pipeline_stage_layout_groups_stage_lanes_in_parallel():
         "Stage 6",
     ]
     assert pipeline_layout["lanes"] >= 5
+
+    steps_by_function = {step["function"]: step for step in pipeline_steps}
+    assert steps_by_function["simple_bpc_frame"]["column"] < steps_by_function["simple_bpc_pixel"]["column"]
+    assert steps_by_function["simple_bpc_pixel"]["column"] < steps_by_function["bpc_stage1_coord_lane"]["column"]
 
     stage_columns: list[int] = []
     for stage_number in range(1, 7):
